@@ -1,0 +1,62 @@
+{
+  "theme": "dark",
+  "autoUpdate": true,
+  "autoUpdateChannel": "latest",
+  "skillListingBudgetFraction": 0.02,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "description": "Run Prettier on the modified file to ensure consistent code formatting.",
+        "hooks": [{ "type": "command", "command": "jq -r '.tool_input.file_path' | xargs npx prettier --write" }]
+      },
+      {
+        "matcher": "Edit|Write",
+        "description": "Protect certain files from being modified.",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Run Prettier on the modified file to ensure consistent code formatting.",
+            "command": "jq -r '.tool_input.file_path' | xargs npx prettier --write"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "description": "Protect certain files from being modified.",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Run a custom script to protect certain files from being modified.",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-files.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "description": "Notify the user that Claude Code needs their attention.",
+        "hooks": [{ "type": "command", "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'" }]
+      }
+    ],
+  "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Remind the user to use Bun and run tests before committing.",
+            "command": "echo 'Reminder: use Bun, not npm. Run bun test before committing. Current sprint: auth refactor.'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Read(./claude運用tips.md)",
+      "Read(./CLAUDE_日本語.md)"
+    ]
+  }
+}
