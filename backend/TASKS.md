@@ -17,7 +17,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-001  | Inference Adapter | done   | G1, G2, G3, G4, G5, G7 | Generator |
 | BE-002  | Persistence       | done   | G1, G2, G3, G4, G6, G7 | Generator |
 | BE-003  | API Surface       | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-004  | Patient endpoints | qa     | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-004  | Patient endpoints | done   | G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -172,4 +172,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; mrn/family_name/given_name/date_of_birth masked before any logger call; error messages MUST NOT echo PHI values.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases (new), interfaces (new router)
-- **Status:** qa
+- **Status:** done
