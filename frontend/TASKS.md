@@ -18,7 +18,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | FE-003 | Record Draft generation UI            | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
 | FE-004 | Draft edit and finalize UI            | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | FE-005 | Final correction UI + FE-004 fixes    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006 | Auto-load draft + correction chain UI | qa     | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006 | Auto-load draft + correction chain UI | done   | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
