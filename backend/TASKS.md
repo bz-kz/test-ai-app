@@ -11,9 +11,32 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID                                            | Title | Status | Gates Touched | Owner |
-| --------------------------------------------- | ----- | ------ | ------------- | ----- |
-| _(empty — first feature task will be BE-001)_ |       |        |               |       |
+| ID      | Title            | Status | Gates Touched | Owner     |
+| ------- | ---------------- | ------ | ------------- | --------- |
+| INF-001 | Runtime Topology | qa     | G0            | Generator |
+
+Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
+
+---
+
+## Runtime Topology (INF-001)
+
+- **Goal:** Deliver the single `docker-compose.yml` that pins the deployment shape — frontend, backend, postgres, llm — with only frontend (3000) and backend (8000) ports exposed to the host.
+- **Inputs:**
+  - SPEC.md#runtime-topology
+  - docs/runbook-local-dev.md
+- **Acceptance:**
+  - [ ] Single `docker-compose.yml` runs frontend, backend, postgres, llm.
+  - [ ] Only `frontend` (3000) and `backend` (8000) publish ports to the host.
+  - [ ] `llm` and `postgres` are reachable only on the internal compose network.
+  - [ ] `docker compose up -d` brings the system to healthy in ≤120 s on a developer machine after first boot.
+- **Out-of-scope:** Production orchestration (k8s/Nomad/etc.), GPU-specific toolkit config, Alembic migrations.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** none
+- **Gates Touched:** G0
+- **Affected Layers:** _(infrastructure / compose only)_
+- **Status:** qa
 
 ---
 

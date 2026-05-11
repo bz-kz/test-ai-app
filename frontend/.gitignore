@@ -1,0 +1,6 @@
+# Next.js build output
+.next/
+out/
+
+# テスト/型チェック中間ファイル
+tsconfig.tsbuildinfo

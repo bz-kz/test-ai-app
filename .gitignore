@@ -55,3 +55,7 @@ dist/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# フロントエンドの src/lib/ はルートの lib/ パターンに誤マッチするため除外を解除
+!frontend/src/lib/
+!frontend/src/lib/**

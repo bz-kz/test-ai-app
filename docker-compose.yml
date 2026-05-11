@@ -1,0 +1,82 @@
+# ローカル開発用 compose。本番オーケストレーション（k8s等）は対象外。
+# llm と postgres はホストへポートを公開しない — local-llm-and-phi.md §1 参照。
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app
+      - LLM_BASE_URL=http://llm:11434
+      - LLM_MODEL=gemma4:e4b
+      - LLM_TIMEOUT_S=60
+    depends_on:
+      postgres:
+        condition: service_healthy
+      llm:
+        condition: service_started
+    healthcheck:
+      # python:slim に curl は含まれないため python -c で代替。/ping はプロセス生存確認のみ。
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping', timeout=4)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=app
+      - POSTGRES_DB=app
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # ポートをホストへ公開しない — internal-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  llm:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    # ポートをホストへ公開しない — internal-only（PHIルール §1）
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_data:
