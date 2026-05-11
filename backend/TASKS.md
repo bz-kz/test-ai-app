@@ -548,16 +548,17 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 
 ## ASR Compose Service (INF-004)
 
-- **Goal:** Add an internal-only `asr` Docker Compose service running `whisper-server` from the `ghcr.io/ggml-org/whisper.cpp:main` image with the `medium-q5_0` GGML model, raise the Docker memory floor in the runbook, and prime ASR env-vars on the backend service. No Python/TS code lands in this Block.
+- **Goal:** Internal-only `asr` Docker Compose service built from `docker/asr/Dockerfile` (whisper.cpp v1.7.5 source build, GGML_NATIVE=OFF for arm64/amd64 portability) running `whisper-server` with the `medium-q5_0` GGML model, raise the Docker memory floor in the runbook, and prime ASR env-vars on the backend service. No Python/TS code lands in this Block. Source build is engineering-equivalent to the ADR's `ghcr.io/ggml-org/whisper.cpp:main` reference — the prebuilt is amd64-only and hangs under Rosetta 2 on Apple Silicon (reproduced 2026-05-12).
 - **Inputs:**
   - SPEC.md#asr-layer-contract — service endpoint, env var names
   - SPEC.md#hardware-assumptions — Docker memory floor ≥13 GB
-  - docs/adr/0001-voice-input-and-local-asr.md — variant pick (medium-q5_0), image choice, port (8080), network boundary
+  - docs/adr/0001-voice-input-and-local-asr.md — variant pick (medium-q5_0), port (8080), network boundary; ADR pins binary + port + license, not the GHCR delivery path
   - .claude/rules/local-llm-and-phi.md §1 §3 — no host ports for asr; audio = PHI
   - docker-compose.yml — existing service shape to follow
+  - docker/asr/Dockerfile — source build: ARG WHISPER_VERSION=v1.7.5; cmake GGML_NATIVE=OFF; multi-stage debian:bookworm-slim
   - docs/runbook-local-dev.md — runbook to update
 - **Acceptance:**
-  - [ ] `docker-compose.yml` defines `asr` service using `ghcr.io/ggml-org/whisper.cpp:main` with `platform: linux/amd64` (image is amd64-only; Rosetta emulation on Apple Silicon).
+  - [ ] `docker-compose.yml` defines `asr` service using `build: { context: ./docker/asr }` (source build from `docker/asr/Dockerfile`; whisper.cpp v1.7.5 pinned via `ARG WHISPER_VERSION`; GGML_NATIVE=OFF for arm64/amd64 portability).
   - [ ] `asr` service joins `internal` network only; no `ports:` entry.
   - [ ] `asr` service volume `asr_data:/models` persists GGML weights across container recreation.
   - [ ] `asr` startup command: download `ggml-medium-q5_0.bin` into `/models` if absent, then exec `whisper-server` with `--host 0.0.0.0 --port 8080 -m /models/ggml-medium-q5_0.bin`.
