@@ -18,6 +18,11 @@ BE-009 Acceptance (list):
   (i) list_drafts_by_encounter が N 件を created_at 降順で返す
   (j) 下書きがない受診で空リストを返す (例外なし)
   (k) 存在しない encounter_id でも空リストを返す (受診存在確認なし)
+
+BE-013 Acceptance (stream):
+  (l) stream_record_draft がチャンクを yield し、完了後に下書き+監査行を永続化する
+  (m) 存在しない encounter_id → EncounterNotFound; LLM 呼び出しなし; 下書き行なし
+  (n) FakeLLM が InferenceError を raise → 例外が伝播; 下書き行・監査行なし (ロールバック)
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ from app.usecases.draft import (
     find_draft_by_id,
     generate_record_draft,
     list_drafts_by_encounter,
+    stream_record_draft,
 )
 from app.usecases.encounter import create_encounter
 from app.usecases.errors import DraftNotFound, EncounterNotFound
@@ -493,3 +499,155 @@ async def test_list_drafts_by_encounter_empty_on_unknown_encounter(session: Asyn
     )
 
     assert drafts == []
+
+
+# ---------------------------------------------------------------------------
+# (l) stream_record_draft — ストリーミング正常系 (BE-013)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stream_record_draft_happy_path(session: AsyncSession) -> None:
+    """stream_record_draft が全チャンクを yield し、完了後に下書き+監査行を永続化する。
+
+    FakeLocalLLMClient は 2 チャンク (text + done) を返す。
+    最後の completion チャンクには draft_id が含まれる。
+    """
+    encounter = await _insert_encounter(session)
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+    clinician_id = uuid4()
+
+    llm = FakeLocalLLMClient()
+    committed: list[bool] = []
+
+    async def _commit() -> None:
+        await session.flush()
+        committed.append(True)
+
+    chunks = []
+    async for chunk in stream_record_draft(
+        clinical_input="発熱と咳。",
+        encounter_id=encounter.id,
+        clinician_id=clinician_id,
+        llm=llm,
+        encounter_repo=encounter_repo,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+        session_commit=_commit,
+    ):
+        chunks.append(chunk)
+
+    # コミット関数が呼ばれたことを確認する
+    assert len(committed) == 1
+
+    # チャンクが yield されたことを確認する: 最低 1 件以上 (テキスト) + 最後に completion
+    assert len(chunks) >= 1
+
+    # 最後のチャンクは completion チャンク (done=True)
+    completion = chunks[-1]
+    assert completion.done is True
+    # completion チャンクの text は JSON ペイロード (draft_id を含む)
+    import json as _json
+
+    payload = _json.loads(completion.text)
+    assert "draft_id" in payload
+    draft_id_str = payload["draft_id"]
+
+    # draft が DB に永続化されていることを確認する
+    from uuid import UUID as _UUID
+
+    draft = await draft_repo.find_by_id(_UUID(draft_id_str))
+    assert draft is not None
+    assert draft.encounter_id == encounter.id
+    # content は FakeLocalLLMClient.DEFAULT_RESPONSE (テキストチャンク)
+    assert draft.content == FakeLocalLLMClient.DEFAULT_RESPONSE
+
+    # DRAFT_CREATE 監査ログが 1 件あることを確認する
+    logs = await audit_repo.list_by_target("record_draft", _UUID(draft_id_str))
+    assert len(logs) == 1
+    assert logs[0].action == AuditAction.DRAFT_CREATE
+    assert logs[0].actor == clinician_id
+    assert logs[0].meta_json == "{}"
+
+
+# ---------------------------------------------------------------------------
+# (m) stream_record_draft — 存在しない encounter_id (BE-013)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stream_record_draft_encounter_not_found(session: AsyncSession) -> None:
+    """存在しない encounter_id で EncounterNotFound が raise され、LLM は呼ばれない。
+    下書き行・監査行も書かれない。
+    """
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+    committed: list[bool] = []
+
+    async def _commit() -> None:
+        await session.flush()
+        committed.append(True)
+
+    with pytest.raises(EncounterNotFound):
+        async for _ in stream_record_draft(
+            clinical_input="テスト入力",
+            encounter_id=uuid4(),
+            clinician_id=uuid4(),
+            llm=llm,
+            encounter_repo=encounter_repo,
+            draft_repo=draft_repo,
+            audit_repo=audit_repo,
+            session_commit=_commit,
+        ):
+            pass  # ループ本体には到達しない
+
+    # LLM は呼ばれていない (stream は呼ばれていない)
+    assert llm.stream_call_count == 0
+    # コミットも呼ばれていない
+    assert len(committed) == 0
+
+
+# ---------------------------------------------------------------------------
+# (n) stream_record_draft — InferenceError mid-stream (BE-013)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stream_record_draft_inference_error_mid_stream(session: AsyncSession) -> None:
+    """FakeLLM が InferenceError を raise すると、例外が伝播し、下書き行・監査行は書かれない。"""
+    encounter = await _insert_encounter(session)
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient(force_error=True)
+    committed: list[bool] = []
+
+    async def _commit() -> None:
+        await session.flush()
+        committed.append(True)
+
+    with pytest.raises(InferenceError):
+        async for _ in stream_record_draft(
+            clinical_input="テスト入力",
+            encounter_id=encounter.id,
+            clinician_id=uuid4(),
+            llm=llm,
+            encounter_repo=encounter_repo,
+            draft_repo=draft_repo,
+            audit_repo=audit_repo,
+            session_commit=_commit,
+        ):
+            pass  # ループ本体には到達しない
+
+    await session.flush()
+
+    # コミットは呼ばれていない (永続化は行われていない)
+    assert len(committed) == 0
+
+    # 下書き行が書かれていないことを確認する
+    drafts = await draft_repo.list_by_encounter(encounter.id)
+    assert len(drafts) == 0

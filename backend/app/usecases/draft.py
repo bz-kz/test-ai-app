@@ -13,8 +13,11 @@ PHI ルール:
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.domain.entities import AuditAction, AuditLog, RecordDraft
@@ -25,7 +28,7 @@ from app.infrastructure.db.repositories import (
     RecordDraftRepository,
 )
 from app.infrastructure.llm.client import LocalLLMClient
-from app.infrastructure.llm.types import GenerateParams
+from app.infrastructure.llm.types import Chunk, GenerateParams
 from app.usecases.errors import DraftNotFound, EncounterNotFound
 from app.usecases.prompts import build_draft_prompt
 
@@ -199,3 +202,100 @@ async def edit_record_draft(
     # update_content の後は必ず行が存在するため None にはならない
     assert updated is not None
     return updated
+
+
+async def stream_record_draft(
+    *,
+    clinical_input: str,
+    encounter_id: UUID,
+    clinician_id: UUID,
+    llm: LocalLLMClient,
+    encounter_repo: EncounterRepository,
+    draft_repo: RecordDraftRepository,
+    audit_repo: AuditLogRepository,
+    session_commit: Callable[[], Coroutine[Any, Any, None]],
+) -> AsyncGenerator[Chunk, None]:
+    """AI によるカルテ下書きをストリーミング生成し、完了後に永続化する非同期ジェネレータ。
+
+    処理順序:
+      1. 受診の存在確認 (EncounterNotFound を raise する可能性あり — LLM 呼び出し前)
+      2. プロンプト構築 (build_draft_prompt — 副作用なし)
+      3. LLM ストリームから各チャンクを yield する。テキストをバッファに蓄積する。
+      4. ストリーム完了後 (chunk.done is True)、RecordDraft + AuditLog を永続化。
+      5. 最終チャンク: draft_id と confidence を含む "completion" チャンクを yield する。
+
+    InferenceError は mid-stream でも伝播させる — ルーター側でエラー SSE イベントに変換する。
+    content / clinical_input / chunk.text は PHI のためログに書かない。
+    """
+    # (1) 受診存在確認: LLM 呼び出し前に同期的に確認する
+    encounter = await encounter_repo.find_by_id(encounter_id)
+    if encounter is None:
+        logger.debug("stream_record_draft aborted: encounter not found")
+        raise EncounterNotFound
+
+    # (2) プロンプト構築: clinical_input は PHI のため内容はログに書かない
+    prompt = build_draft_prompt(clinical_input)
+    logger.debug(
+        "stream draft prompt built: encounter_id=%s length=%d",
+        short_id(encounter_id),
+        len(prompt),
+    )
+
+    # (3) LLM ストリーム: テキストをバッファに蓄積しながら各チャンクを呼び出し元に yield する
+    # chunk.text / content は PHI のためログに書かない
+    buffer: list[str] = []
+    last_confidence: float | None = None
+
+    async for chunk in llm.stream(prompt, GenerateParams(temperature=0.7, max_tokens=1500)):
+        if chunk.text:
+            buffer.append(chunk.text)
+        if chunk.confidence is not None:
+            last_confidence = chunk.confidence
+        if not chunk.done:
+            # 未完了チャンクをそのまま呼び出し元に返す
+            yield chunk
+        # done=True のチャンクは下記の永続化後に completion チャンクとして yield する
+
+    # (4) ストリーム完了: draft + audit を永続化する (InferenceError なく完走した場合のみ)
+    now = datetime.now(tz=UTC)
+    assembled_content = "".join(buffer)
+    draft = RecordDraft(
+        id=uuid4(),
+        encounter_id=encounter_id,
+        content=assembled_content,
+        confidence=last_confidence,
+        created_at=now,
+        updated_at=now,
+    )
+    await draft_repo.add(draft)
+
+    # 監査ログ: meta_json は PHI を含まない空オブジェクト
+    audit = AuditLog(
+        id=uuid4(),
+        at=now,
+        actor=clinician_id,
+        action=AuditAction.DRAFT_CREATE,
+        target_kind="record_draft",
+        target_id=draft.id,
+        meta_json="{}",
+    )
+    await audit_repo.append(audit)
+
+    # トランザクションコミット: ルーター DI から渡されたコミット関数を呼び出す
+    await session_commit()
+
+    # PHI をログに書かない — short_id で再識別リスクを低減する
+    logger.info(
+        "stream record_draft created: id=%s encounter_id=%s clinician_id=%s",
+        short_id(draft.id),
+        short_id(encounter_id),
+        short_id(clinician_id),
+    )
+
+    # (5) クライアントが draft_id を参照できるよう completion チャンクを yield する
+    # テキストには draft_id を JSON エンコードして埋め込む (SSE "complete" イベントのペイロード)
+    completion_payload = json.dumps(
+        {"draft_id": str(draft.id), "confidence": last_confidence},
+        ensure_ascii=False,
+    )
+    yield Chunk(text=completion_payload, done=True, confidence=last_confidence)

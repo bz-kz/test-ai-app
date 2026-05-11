@@ -71,8 +71,14 @@ from app.usecases.di import (
     make_find_patient_by_mrn,
     make_generate_record_draft,
     make_list_encounters_by_patient,
+    make_stream_record_draft,
 )
-from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
+from app.usecases.draft import (
+    edit_record_draft,
+    find_draft_by_id,
+    generate_record_draft,
+    stream_record_draft,
+)
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
@@ -162,6 +168,29 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
             return await find_final_by_id(final_id=final_id, final_repo=final_repo)
 
         return _find
+
+    def _override_make_stream_record_draft():  # type: ignore[no-untyped-def]
+        encounter_repo = EncounterRepository(session)
+        draft_repo = RecordDraftRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _stream(clinical_input, encounter_id, clinician_id):  # type: ignore[no-untyped-def]
+            async def _commit() -> None:
+                await session.flush()
+
+            async for chunk in stream_record_draft(
+                clinical_input=clinical_input,
+                encounter_id=encounter_id,
+                clinician_id=clinician_id,
+                llm=llm,
+                encounter_repo=encounter_repo,
+                draft_repo=draft_repo,
+                audit_repo=audit_repo,
+                session_commit=_commit,
+            ):
+                yield chunk
+
+        return _stream
 
     # 受診ファクトリの override
     def _override_make_create_encounter():  # type: ignore[no-untyped-def]
@@ -259,6 +288,7 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
 
     # DI オーバーライド
     test_app.dependency_overrides[make_generate_record_draft] = _override_make_generate_record_draft
+    test_app.dependency_overrides[make_stream_record_draft] = _override_make_stream_record_draft
     test_app.dependency_overrides[make_find_draft_by_id] = _override_make_find_draft_by_id
     test_app.dependency_overrides[make_edit_record_draft] = _override_make_edit_record_draft
     test_app.dependency_overrides[make_finalize_draft_to_record_final] = (
@@ -819,3 +849,224 @@ class TestFinalizeDraft:
         assert resp.status_code == 404
         body = resp.json()
         assert body["code"] == "draft_not_found"
+
+
+# ---------------------------------------------------------------------------
+# SSE ストリーミングエンドポイントテスト (BE-013)
+# ---------------------------------------------------------------------------
+
+
+def _parse_sse_frames(text: str) -> list[dict[str, str]]:
+    """SSE レスポンステキストをフレームのリストに変換するヘルパー。
+
+    各フレームは "event: ...\ndata: ..." または "data: ..." 形式。
+    Returns: [{"event": "...", "data": "..."}, ...] (event キーは省略可)
+    """
+    import contextlib
+    import json as _json
+
+    frames: list[dict[str, str]] = []
+    # ダブル改行でフレームを区切る
+    raw_frames = [f.strip() for f in text.split("\n\n") if f.strip()]
+    for raw in raw_frames:
+        frame: dict[str, str] = {}
+        for line in raw.splitlines():
+            if line.startswith("event: "):
+                frame["event"] = line[len("event: ") :]
+            elif line.startswith("data: "):
+                frame["data"] = line[len("data: ") :]
+        if frame:
+            # data が JSON 文字列の場合は parsed キーに格納する
+            if "data" in frame:
+                with contextlib.suppress(_json.JSONDecodeError):
+                    frame["parsed"] = _json.loads(frame["data"])  # type: ignore[assignment]
+            frames.append(frame)
+    return frames
+
+
+class TestPostDraftStream:
+    """POST /encounters/{id}/drafts/stream の SSE ストリーミングテスト (BE-013)。"""
+
+    def test_200_event_stream_content_type(self, client: TestClient) -> None:
+        """正常系: レスポンスの Content-Type が text/event-stream である。"""
+        patient_id = _create_patient(client, mrn="MRN-STREAM-001").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        resp = client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": "発熱が続いている。"},
+        )
+
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers.get("content-type", "")
+
+    def test_200_sse_frames_present(self, client: TestClient) -> None:
+        """正常系: SSE レスポンスに ≥1 件の data フレームと 1 件の complete フレームがある。"""
+        patient_id = _create_patient(client, mrn="MRN-STREAM-002").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        resp = client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": "胸痛。"},
+        )
+
+        assert resp.status_code == 200
+        frames = _parse_sse_frames(resp.text)
+
+        # 少なくとも 1 件以上のフレームがある
+        assert len(frames) >= 1
+
+        # 最後のフレームが event: complete であることを確認する
+        complete_frames = [f for f in frames if f.get("event") == "complete"]
+        assert len(complete_frames) == 1
+
+    def test_200_complete_frame_has_draft_id(self, client: TestClient) -> None:
+        """正常系: complete フレームに draft_id が含まれる。"""
+        patient_id = _create_patient(client, mrn="MRN-STREAM-003").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        resp = client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": "腹痛。"},
+        )
+
+        assert resp.status_code == 200
+        frames = _parse_sse_frames(resp.text)
+        complete_frames = [f for f in frames if f.get("event") == "complete"]
+        assert len(complete_frames) == 1
+
+        import json as _json
+
+        payload = _json.loads(complete_frames[0]["data"])
+        assert "draft_id" in payload
+        assert payload["draft_id"] is not None
+
+    def test_200_assembled_content_persisted(
+        self, client: TestClient, session: AsyncSession
+    ) -> None:
+        """正常系: チャンクを結合した content が DB に永続化されている。"""
+        patient_id = _create_patient(client, mrn="MRN-STREAM-004").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        resp = client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": "倦怠感。"},
+        )
+
+        assert resp.status_code == 200
+        frames = _parse_sse_frames(resp.text)
+        complete_frames = [f for f in frames if f.get("event") == "complete"]
+        assert len(complete_frames) == 1
+
+        import json as _json
+        from uuid import UUID as _UUID
+
+        draft_id = _UUID(_json.loads(complete_frames[0]["data"])["draft_id"])
+
+        # draft が DB に存在することを確認する (session はインメモリ SQLite)
+        draft_repo = RecordDraftRepository(session)
+
+        async def _check() -> None:
+            draft = await draft_repo.find_by_id(draft_id)
+            assert draft is not None
+            assert draft.encounter_id == _UUID(encounter_id)
+            # FakeLocalLLMClient のデフォルト応答が結合されている
+            assert draft.content == FakeLocalLLMClient.DEFAULT_RESPONSE
+
+        import asyncio
+
+        asyncio.get_event_loop().run_until_complete(_check())
+
+    def test_404_on_nonexistent_encounter(self, client: TestClient) -> None:
+        """存在しない encounter_id で 404 を返す (ストリーム開始前の同期エラー)。"""
+        resp = client.post(
+            f"/encounters/{uuid4()}/drafts/stream",
+            json={"clinical_input": "テスト入力"},
+        )
+
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["code"] == "encounter_not_found"
+
+    def test_404_is_not_streaming(self, client: TestClient) -> None:
+        """404 レスポンスは SSE ストリームではなく通常の JSON レスポンスである。"""
+        resp = client.post(
+            f"/encounters/{uuid4()}/drafts/stream",
+            json={"clinical_input": "テスト入力"},
+        )
+
+        assert resp.status_code == 404
+        # Content-Type は application/json (SSE ではない)
+        assert "application/json" in resp.headers.get("content-type", "")
+
+    def test_422_on_empty_clinical_input(self, client: TestClient) -> None:
+        """clinical_input が空文字で 422 を返す (ストリーム開始前のバリデーションエラー)。"""
+        patient_id = _create_patient(client, mrn="MRN-STREAM-005").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        resp = client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": ""},
+        )
+
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["code"] == "validation_error"
+
+    def test_inference_error_mid_stream_returns_error_event(
+        self,
+        session: AsyncSession,
+        error_llm: FakeLocalLLMClient,
+        error_client: TestClient,
+    ) -> None:
+        """FakeLLM が InferenceError を raise すると SSE error イベントが送出される。
+        下書き行は永続化されない。
+        """
+        patient_id = _create_patient(error_client, mrn="MRN-STREAM-E01").json()["id"]
+        encounter_id = _create_encounter(error_client, patient_id).json()["id"]
+
+        resp = error_client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": "腹痛と下痢。"},
+        )
+
+        # ストリームは開くが error イベントで終了する
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers.get("content-type", "")
+
+        frames = _parse_sse_frames(resp.text)
+        error_frames = [f for f in frames if f.get("event") == "error"]
+        assert len(error_frames) == 1
+
+        import json as _json
+
+        error_body = _json.loads(error_frames[0]["data"])
+        assert error_body["code"] == "inference_unavailable"
+
+    def test_inference_error_no_draft_persisted(
+        self,
+        session: AsyncSession,
+        error_llm: FakeLocalLLMClient,
+        error_client: TestClient,
+    ) -> None:
+        """InferenceError の場合、下書き行が DB に存在しないことを確認する。"""
+        patient_id = _create_patient(error_client, mrn="MRN-STREAM-E02").json()["id"]
+        encounter_id = _create_encounter(error_client, patient_id).json()["id"]
+
+        error_client.post(
+            f"/encounters/{encounter_id}/drafts/stream",
+            json={"clinical_input": "頭痛。"},
+        )
+
+        # 下書きが存在しないことを確認する
+        draft_repo = RecordDraftRepository(session)
+
+        async def _check() -> None:
+            from uuid import UUID as _UUID
+
+            drafts = await draft_repo.list_by_encounter(_UUID(encounter_id))
+            assert len(drafts) == 0
+
+        import asyncio
+
+        asyncio.get_event_loop().run_until_complete(_check())

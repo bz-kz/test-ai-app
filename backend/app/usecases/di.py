@@ -25,11 +25,13 @@ from app.infrastructure.db.repositories import (
 )
 from app.infrastructure.llm import make_llm_client
 from app.infrastructure.llm.client import LocalLLMClient
+from app.infrastructure.llm.types import Chunk
 from app.usecases.draft import (
     edit_record_draft,
     find_draft_by_id,
     generate_record_draft,
     list_drafts_by_encounter,
+    stream_record_draft,
 )
 from app.usecases.encounter import (
     create_encounter,
@@ -330,6 +332,47 @@ def make_list_drafts_by_encounter(
         )
 
     return _list
+
+
+StreamRecordDraftCallable = Callable[
+    [str, UUID, UUID],
+    AsyncGenerator[Chunk, None],
+]
+
+
+def make_stream_record_draft(
+    session: AsyncSession = Depends(_get_db_session),
+    llm: LocalLLMClient = Depends(get_llm_client),
+) -> StreamRecordDraftCallable:
+    """stream_record_draft ユースケースをセッション + LLM 付きでクロージャとして返す (BE-013)。
+
+    LLM クライアントは get_llm_client 依存関数から取得するシングルトン。
+    テスト時は app.dependency_overrides[get_llm_client] で差し替える。
+    """
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    async def _stream(
+        clinical_input: str, encounter_id: UUID, clinician_id: UUID
+    ) -> AsyncGenerator[Chunk, None]:
+        # コミット関数をクロージャとして渡す (stream_record_draft が永続化後に呼ぶ)
+        async def _commit() -> None:
+            await session.commit()
+
+        async for chunk in stream_record_draft(
+            clinical_input=clinical_input,
+            encounter_id=encounter_id,
+            clinician_id=clinician_id,
+            llm=llm,
+            encounter_repo=encounter_repo,
+            draft_repo=draft_repo,
+            audit_repo=audit_repo,
+            session_commit=_commit,
+        ):
+            yield chunk
+
+    return _stream
 
 
 # ---------------------------------------------------------------------------

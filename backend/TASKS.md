@@ -11,23 +11,24 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                           | Status | Gates Touched              | Owner     |
-| ------- | ------------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology                | done   | G0                         | Generator |
-| BE-001  | Inference Adapter               | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation         | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize         | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes           | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment     | done   | G5 (primary), G6, G0       | Planner   |
-| BE-009  | List drafts for encounter       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-010  | Security hardening bundle       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-011  | INFO-level UUID hardening sweep | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-012  | X-Clinician-Id header auth      | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                           | Status      | Gates Touched              | Owner     |
+| ------- | ------------------------------- | ----------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology                | done        | G0                         | Generator |
+| BE-001  | Inference Adapter               | done        | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints               | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation         | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize         | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes           | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain   | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment     | done        | G5 (primary), G6, G0       | Planner   |
+| BE-009  | List drafts for encounter       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-010  | Security hardening bundle       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-011  | INFO-level UUID hardening sweep | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-012  | X-Clinician-Id header auth      | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-013  | Streaming draft endpoint        | in-progress | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -503,3 +504,41 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** interfaces (new auth.py, all 4 routers), usecases (patient.py, draft.py, final.py, di.py), frontend (api.ts, constants.ts)
 - **Status:** done
+
+---
+
+## Streaming draft endpoint (BE-013)
+
+- **Goal:** Add `POST /encounters/{encounter_id}/drafts/stream` returning an SSE stream. Validates the encounter, streams chunks from `LocalLLMClient.stream()`, encodes each as an SSE event, then after the stream completes persists the assembled draft and a `DRAFT_CREATE` audit row (mirroring BE-006's non-stream path).
+- **Inputs:**
+  - SPEC.md#inference-layer-contract — `LocalLLMClient.stream(prompt, params) -> AsyncIterator[Chunk]`; 120 s end-to-end timeout; raises `InferenceError` with masked context on failure.
+  - backend/SPEC.md#api-surface — error envelope `{code, message}`; `response_model=`.
+  - backend/app/infrastructure/llm/types.py — `Chunk(text: str, done: bool, confidence: float | None)`.
+  - backend/app/infrastructure/llm/{ollama_client.py, fake_client.py} — both implement `.stream()`.
+  - backend/app/usecases/draft.py (BE-006) — `generate_record_draft` to mirror.
+  - backend/app/usecases/prompts.py — `build_draft_prompt(clinical_input)`.
+  - backend/app/usecases/di.py — `get_llm_client` factory.
+  - backend/app/interfaces/auth.py — `get_current_clinician` dependency.
+  - backend/app/interfaces/exception_handlers.py — `inference_error_handler` for 503 mapping.
+  - backend/app/infrastructure/db/repositories.py — `RecordDraftRepository.add`, `EncounterRepository.find_by_id`, `AuditLogRepository.append`.
+  - .claude/rules/local-llm-and-phi.md §3 — clinical_input + chunk.text + assembled draft.content are PHI; mask before logger.
+- **Acceptance:**
+  - [ ] New `stream_record_draft` async generator in `app/usecases/draft.py` yielding `Chunk`; after stream completes persists draft + DRAFT_CREATE audit; yields one final completion chunk carrying the new draft id.
+  - [ ] On `InferenceError` mid-stream, nothing persisted; exception propagates.
+  - [ ] On `EncounterNotFound`, raises before any LLM call (router maps to synchronous 404).
+  - [ ] Logger discipline: short_id for encounter/clinician; never log clinical_input, chunk.text, or content.
+  - [ ] New endpoint `POST /encounters/{encounter_id}/drafts/stream` in `app/interfaces/routers/drafts.py`; `StreamingResponse` with `media_type="text/event-stream"`.
+  - [ ] SSE format: `data: {...}\n\n` for chunks; `event: complete\ndata: {...}\n\n` for completion; `event: error\ndata: {...}\n\n` for mid-stream errors.
+  - [ ] 404/422 happen synchronously (before stream opens); InferenceError mid-stream becomes SSE error event.
+  - [ ] `grep -nE '^from app\.infrastructure' backend/app/interfaces/routers/drafts.py` → 0 hits.
+  - [ ] `make_stream_record_draft` factory in `app/usecases/di.py` mirroring `make_generate_record_draft`.
+  - [ ] Usecase tests: stream happy path; missing encounter; InferenceError mid-stream (no persist).
+  - [ ] Router tests: 200 SSE frames; 404 synchronous; 422 synchronous; InferenceError mid-stream SSE error event.
+  - [ ] Non-stream endpoint tests unchanged.
+- **Out-of-scope:** Resumable streams; multi-client concurrent streams; WebSocket/WebTransport; editing/finalizing via stream.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; stream path; same model `gemma4:e4b`; budget same as BE-006; 120 s end-to-end.
+- **Data Sensitivity:** PHI; clinical_input and chunk.text are PHI; never echoed in logger or SSE error frames.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** usecases (extend draft.py + di.py), interfaces (extend drafts router)
+- **Status:** in-progress
