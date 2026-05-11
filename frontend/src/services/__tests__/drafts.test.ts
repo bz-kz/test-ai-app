@@ -4,6 +4,7 @@ import {
   editRecordDraft,
   finalizeRecordDraft,
   getRecordFinalById,
+  listDraftsByEncounter,
 } from "../drafts";
 
 // apiFetch をモック — 実際の fetch は呼び出さない
@@ -147,6 +148,54 @@ describe("finalizeRecordDraft", () => {
     expect(mockApiFetch).toHaveBeenCalledWith(
       `/drafts/${FAKE_DRAFT_ID}/finalize`,
       expect.objectContaining({ method: "POST" })
+    );
+  });
+});
+
+describe("listDraftsByEncounter", () => {
+  beforeEach(() => {
+    mockApiFetch.mockReset();
+  });
+
+  it("成功時 (単一下書き): kind=found と drafts 配列を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [FAKE_DRAFT] });
+    const result = await listDraftsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "found", drafts: [FAKE_DRAFT] });
+  });
+
+  it("成功時 (複数下書き): DESC 順が保持される", async () => {
+    const olderDraft = { ...FAKE_DRAFT, id: "older", created_at: "2024-01-01T00:00:00Z" };
+    const newerDraft = { ...FAKE_DRAFT, id: "newer", created_at: "2024-01-02T00:00:00Z" };
+    // バックエンドが DESC 順で返すため、フロントエンドはそのまま返す
+    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [newerDraft, olderDraft] });
+    const result = await listDraftsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "found", drafts: [newerDraft, olderDraft] });
+  });
+
+  it("成功時 (空リスト): kind=found と空配列を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [] });
+    const result = await listDraftsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "found", drafts: [] });
+  });
+
+  it("server_error: kind=error を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
+    const result = await listDraftsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "error" });
+  });
+
+  it("network_error: kind=error を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
+    const result = await listDraftsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "error" });
+  });
+
+  it("GET メソッドと正しいパスで apiFetch を呼び出す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [] });
+    await listDraftsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      `/encounters/${FAKE_ENCOUNTER_ID}/drafts`,
+      expect.objectContaining({ method: "GET" })
     );
   });
 });

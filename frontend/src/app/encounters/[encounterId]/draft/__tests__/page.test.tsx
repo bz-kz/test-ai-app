@@ -17,13 +17,27 @@ vi.mock("@/hooks/useCorrectFinal", () => ({
   useCorrectFinal: vi.fn(),
 }));
 
+// useEncounterDrafts フックをモック (FE-006)
+vi.mock("@/hooks/useEncounterDrafts", () => ({
+  useEncounterDrafts: vi.fn(),
+}));
+
+// useFinalChain フックをモック (FE-006)
+vi.mock("@/hooks/useFinalChain", () => ({
+  useFinalChain: vi.fn(),
+}));
+
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
 import { useCorrectFinal } from "@/hooks/useCorrectFinal";
+import { useEncounterDrafts } from "@/hooks/useEncounterDrafts";
+import { useFinalChain } from "@/hooks/useFinalChain";
 
 const mockUseGenerateDraft = vi.mocked(useGenerateDraft);
 const mockUseDraftLifecycle = vi.mocked(useDraftLifecycle);
 const mockUseCorrectFinal = vi.mocked(useCorrectFinal);
+const mockUseEncounterDrafts = vi.mocked(useEncounterDrafts);
+const mockUseFinalChain = vi.mocked(useFinalChain);
 
 const FAKE_ENCOUNTER_ID = "00000000-0000-0000-0000-000000000010";
 const FAKE_DRAFT_ID = "00000000-0000-0000-0000-000000000020";
@@ -114,6 +128,29 @@ function makeCorrectReturn(overrides: Partial<ReturnType<typeof useCorrectFinal>
   };
 }
 
+/** テスト用のデフォルト useEncounterDrafts 戻り値 (FE-006) */
+function makeEncounterDraftsReturn(overrides: Partial<ReturnType<typeof useEncounterDrafts>>) {
+  return {
+    status: "idle" as const,
+    drafts: [],
+    latest: null,
+    error: null,
+    load: vi.fn(),
+    ...overrides,
+  };
+}
+
+/** テスト用のデフォルト useFinalChain 戻り値 (FE-006) */
+function makeFinalChainReturn(overrides: Partial<ReturnType<typeof useFinalChain>>) {
+  return {
+    status: "idle" as const,
+    chain: [],
+    error: null,
+    load: vi.fn(),
+    ...overrides,
+  };
+}
+
 /** Next.js 15 の async params を模倣する */
 function makeParams(encounterId: string): Promise<{ encounterId: string }> {
   return Promise.resolve({ encounterId });
@@ -126,11 +163,15 @@ function makeParams(encounterId: string): Promise<{ encounterId: string }> {
 async function renderPage(
   generateOverrides: Partial<ReturnType<typeof useGenerateDraft>> = {},
   lifecycleOverrides: Partial<ReturnType<typeof useDraftLifecycle>> = {},
-  correctOverrides: Partial<ReturnType<typeof useCorrectFinal>> = {}
+  correctOverrides: Partial<ReturnType<typeof useCorrectFinal>> = {},
+  encounterDraftsOverrides: Partial<ReturnType<typeof useEncounterDrafts>> = {},
+  finalChainOverrides: Partial<ReturnType<typeof useFinalChain>> = {}
 ) {
   mockUseGenerateDraft.mockReturnValue(makeGenerateReturn(generateOverrides));
   mockUseDraftLifecycle.mockReturnValue(makeLifecycleReturn(lifecycleOverrides));
   mockUseCorrectFinal.mockReturnValue(makeCorrectReturn(correctOverrides));
+  mockUseEncounterDrafts.mockReturnValue(makeEncounterDraftsReturn(encounterDraftsOverrides));
+  mockUseFinalChain.mockReturnValue(makeFinalChainReturn(finalChainOverrides));
   await act(async () => {
     render(<DraftPage params={makeParams(FAKE_ENCOUNTER_ID)} />);
   });
@@ -512,5 +553,109 @@ describe("DraftPage (FE-005: correction flow)", () => {
     );
     // FAKE_FINAL.confidence = 0.85 (neutral バリアント)
     expect(screen.getByText("信頼度 0.85")).toBeInTheDocument();
+  });
+});
+
+// ============================================================
+// FE-006 の追加テスト
+// ============================================================
+
+describe("DraftPage (FE-006: auto-load draft)", () => {
+  it("encounterDrafts.status=loading かつ draft=null のとき '下書きを確認しています…' が表示される", async () => {
+    await renderPage({ status: "idle", draft: null }, {}, {}, { status: "loading", latest: null });
+    expect(screen.getByText("下書きを確認しています…")).toBeInTheDocument();
+    // 通常の案内テキストは表示されない
+    expect(screen.queryByText("臨床入力を記入して『下書きを生成』を押してください")).toBeNull();
+  });
+
+  it("encounterDrafts.status=loaded かつ latest=null のとき通常の案内テキストが表示される", async () => {
+    await renderPage(
+      { status: "idle", draft: null },
+      {},
+      {},
+      { status: "loaded", latest: null, drafts: [] }
+    );
+    expect(
+      screen.getByText("臨床入力を記入して『下書きを生成』を押してください")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("下書きを確認しています…")).toBeNull();
+  });
+
+  it("encounterDrafts.status=loaded かつ latest があり draft=null のとき setDraft が呼ばれる (auto-seed)", async () => {
+    const mockSetDraft = vi.fn();
+    // draft=null で開始; useEffect が setDraft を呼ぶ
+    await renderPage(
+      { status: "idle", draft: null, setDraft: mockSetDraft },
+      {},
+      {},
+      { status: "loaded", latest: FAKE_DRAFT, drafts: [FAKE_DRAFT] }
+    );
+    // useEffect が同期的に走るため act 完了後に確認
+    expect(mockSetDraft).toHaveBeenCalledWith(FAKE_DRAFT);
+  });
+
+  it("draft が既にある場合は encounterDrafts.latest があっても setDraft は呼ばれない", async () => {
+    const mockSetDraft = vi.fn();
+    // draft が既にセットされている
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT, setDraft: mockSetDraft },
+      {},
+      {},
+      { status: "loaded", latest: FAKE_DRAFT, drafts: [FAKE_DRAFT] }
+    );
+    expect(mockSetDraft).not.toHaveBeenCalled();
+  });
+});
+
+describe("DraftPage (FE-006: chain UI in finalized mode)", () => {
+  it("finalChain.status=loading のとき '訂正履歴を読み込み中…' が表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view" },
+      {},
+      { status: "loading", chain: [] }
+    );
+    expect(screen.getByText("訂正履歴を読み込み中…")).toBeInTheDocument();
+  });
+
+  it("finalChain.status=loaded かつ chain が存在するとき ChainList が描画される", async () => {
+    const chain = [
+      { ...FAKE_FINAL, id: "v1", created_at: "2024-01-01T00:00:00Z" },
+      { ...FAKE_FINAL, id: "v2", predecessor_id: "v1", created_at: "2024-01-02T00:00:00Z" },
+    ];
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view" },
+      {},
+      { status: "loaded", chain }
+    );
+    // ChainList の section が描画される
+    expect(screen.getByRole("region", { name: "訂正履歴" })).toBeInTheDocument();
+    // 2エントリ分 <li> が描画される
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("finalChain.status=not_found のとき JP フォールバックメッセージが表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view" },
+      {},
+      { status: "not_found", chain: [] }
+    );
+    expect(screen.getByText("訂正履歴を取得できませんでした。")).toBeInTheDocument();
+  });
+
+  it("finalChain.status=error のとき JP フォールバックメッセージが表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view" },
+      {},
+      { status: "error", chain: [], error: "訂正履歴の読み込み中にエラーが発生しました。" }
+    );
+    expect(screen.getByText("訂正履歴を取得できませんでした。")).toBeInTheDocument();
   });
 });

@@ -6,6 +6,8 @@
  * - useGenerateDraft: 生成フロー (FE-003)
  * - useDraftLifecycle: 編集・承認フロー (FE-004)
  * - useCorrectFinal: 確定カルテ訂正フロー (FE-005)
+ * - useEncounterDrafts: ページマウント時に既存下書きを自動ロードする (FE-006)
+ * - useFinalChain: finalized モードで訂正履歴チェーンを取得する (FE-006)
  * - PHI (clinicalInput, draft.content, final.content) は console.* に出力しない。
  * - PHI は localStorage / sessionStorage / indexedDB / cookies に書き込まない。
  * - PHI は URL / searchParams に含めない。
@@ -19,7 +21,7 @@
  *   useGenerateDraft.status === "success" && lifecycle.mode === "editing"
  *     → TextArea + キャンセル / 更新ボタン
  *   lifecycle.mode === "finalized" && correction.mode === "view"
- *     → 確定済みバッジ + 確定カルテ本文 + 訂正ボタン
+ *     → 確定済みバッジ + 確定カルテ本文 + 訂正ボタン + ChainList
  *   lifecycle.mode === "finalized" && correction.mode === "correcting"
  *     → TextArea (pre-fill) + キャンセル / 更新ボタン
  */
@@ -28,6 +30,8 @@ import React, { useState, useEffect } from "react";
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
 import { useCorrectFinal } from "@/hooks/useCorrectFinal";
+import { useEncounterDrafts } from "@/hooks/useEncounterDrafts";
+import { useFinalChain } from "@/hooks/useFinalChain";
 import {
   LATENCY_SPINNER_MS,
   LATENCY_SKELETON_MS,
@@ -39,6 +43,7 @@ import TextArea from "@/components/atoms/TextArea";
 import FormField from "@/components/molecules/FormField";
 import AIIndicatedText from "@/components/molecules/AIIndicatedText";
 import ConfidencePill from "@/components/molecules/ConfidencePill";
+import ChainList from "@/components/molecules/ChainList";
 import type { RecordFinal } from "@/types/recordFinal";
 
 interface DraftPageProps {
@@ -176,6 +181,33 @@ export default function DraftPage({ params }: DraftPageProps) {
     }
   }, [correction.correctedFinal]);
 
+  // FE-006: ページマウント時に既存の下書きを自動ロードする
+  const encounterDrafts = useEncounterDrafts();
+
+  useEffect(() => {
+    encounterDrafts.load(encounterId);
+    // encounterId が変わったときのみ再実行する (実際には SPA ルーティングで変わることはないが念のため)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encounterId]);
+
+  // FE-006: loaded かつ最新下書きが存在し、かつ現在 draft が null なら自動シードする
+  useEffect(() => {
+    if (encounterDrafts.status === "loaded" && encounterDrafts.latest !== null && draft === null) {
+      setDraft(encounterDrafts.latest);
+    }
+  }, [encounterDrafts.status, encounterDrafts.latest, draft, setDraft]);
+
+  // FE-006: finalized モードで currentFinal.id が変わるたびに訂正チェーンを取得する
+  const finalChain = useFinalChain();
+
+  useEffect(() => {
+    if (lifecycle.mode === "finalized" && currentFinal !== null) {
+      finalChain.load(currentFinal.id);
+    }
+    // currentFinal.id と lifecycle.mode の変化を監視する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lifecycle.mode, currentFinal?.id]);
+
   const isGenerating = status === "generating";
   const isButtonDisabled = clinicalInput.trim() === "" || isGenerating;
   // ≤300ms はボタン内スピナーを出さない (invisible tier)
@@ -219,11 +251,17 @@ export default function DraftPage({ params }: DraftPageProps) {
 
       {/* 出力エリア */}
       <section aria-live="polite" aria-atomic="true">
-        {/* idle かつ下書きなし: 案内テキスト */}
+        {/* idle かつ下書きなし: 案内テキスト (自動ロード中は確認インジケーターを表示) */}
         {status === "idle" && draft === null && (
-          <p className="text-center text-slate">
-            臨床入力を記入して『下書きを生成』を押してください
-          </p>
+          <>
+            {encounterDrafts.status === "loading" ? (
+              <p className="text-center text-slate">下書きを確認しています…</p>
+            ) : (
+              <p className="text-center text-slate">
+                臨床入力を記入して『下書きを生成』を押してください
+              </p>
+            )}
+          </>
         )}
 
         {/* generating: レイテンシ UX 階層 */}
@@ -436,6 +474,15 @@ export default function DraftPage({ params }: DraftPageProps) {
                     訂正
                   </Button>
                 </div>
+
+                {/* FE-006: 訂正履歴チェーン */}
+                {finalChain.status === "loading" && (
+                  <p className="mt-4 text-sm text-slate">訂正履歴を読み込み中…</p>
+                )}
+                {(finalChain.status === "error" || finalChain.status === "not_found") && (
+                  <p className="mt-4 text-sm text-slate">訂正履歴を取得できませんでした。</p>
+                )}
+                {finalChain.status === "loaded" && <ChainList chain={finalChain.chain} />}
               </div>
             )}
           </div>

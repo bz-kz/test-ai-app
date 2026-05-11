@@ -11,13 +11,14 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID     | Title                              | Status | Gates Touched              | Owner     |
-| ------ | ---------------------------------- | ------ | -------------------------- | --------- |
-| FE-001 | Frontend foundation + Button atom  | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002 | Patient Search by MRN              | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003 | Record Draft generation UI         | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004 | Draft edit and finalize UI         | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005 | Final correction UI + FE-004 fixes | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID     | Title                                 | Status | Gates Touched              | Owner     |
+| ------ | ------------------------------------- | ------ | -------------------------- | --------- |
+| FE-001 | Frontend foundation + Button atom     | done   | G1, G2, G3, G6, G7         | Generator |
+| FE-002 | Patient Search by MRN                 | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003 | Record Draft generation UI            | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004 | Draft edit and finalize UI            | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005 | Final correction UI + FE-004 fixes    | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006 | Auto-load draft + correction chain UI | qa     | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
@@ -189,6 +190,40 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; `final.content` and correction `content` are free-text clinical narrative per `.claude/rules/local-llm-and-phi.md` §3; masked before any logger call; never in browser storage or URL.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** molecules (AIIndicatedText prop fix), hooks (useDraftLifecycle propagation + new useCorrectFinal), services (new finals service), app (page extension)
+
+---
+
+## Auto-load draft + correction chain UI (FE-006)
+
+- **Goal:** Two page enhancements on `/encounters/[encounterId]/draft`: (1) auto-load the latest existing draft on page mount and seed it into `useGenerateDraft` so the user does not need to regenerate; (2) render the predecessor correction chain in `finalized` mode below the AIIndicatedText using the `ChainList` molecule.
+- **Inputs:**
+  - backend/app/interfaces/routers/encounters.py — `GET /encounters/{id}/drafts` returns `list[DraftRead]` ordered by `created_at` DESC (BE-009 contract)
+  - backend/app/interfaces/routers/finals.py — `GET /finals/{id}/chain` returns `list[FinalRead]` oldest→newest (BE-008 contract); 404 `final_not_found`
+  - frontend/src/services/drafts.ts — existing `apiFetch` HTTP client; extended with `listDraftsByEncounter`
+  - frontend/src/services/finals.ts — existing `getFinalChain`; reused for chain UI
+  - frontend/src/hooks/useGenerateDraft.ts — `setDraft` used to seed auto-loaded draft
+  - frontend/src/hooks/useDraftLifecycle.ts — `mode` drives conditional chain fetch
+  - frontend/src/components/molecules/AIIndicatedText.tsx — renders finalized content
+  - frontend/src/types/{recordDraft,recordFinal}.ts — existing types
+  - .claude/rules/local-llm-and-phi.md §3, §4 — PHI in content; no console/storage/URL
+- **Acceptance:**
+  - [x] `listDraftsByEncounter(encounterId, opts?)` added to `services/drafts.ts`; returns `ListDraftsResult`; unit tests cover 200+drafts, 200+empty, error (6 tests total in drafts.test.ts).
+  - [x] `hooks/useEncounterDrafts.ts` — `status/drafts/latest/error/load`; AbortController per call; ≥6 unit tests green.
+  - [x] `hooks/useFinalChain.ts` — `status/chain/error/load`; `not_found` tag; AbortController; ≥5 unit tests green.
+  - [x] `components/molecules/ChainList.tsx` — `<ol>` with `<li>` per entry; oldest→newest order; current head `font-bold`; excerpt ≤80 chars + ellipsis; `aria-label` includes 第N版 + date; empty chain renders null; ≥5 unit tests green.
+  - [x] Page extended: `useEncounterDrafts.load(encounterId)` called on mount; auto-seeds draft when `status=loaded && latest !== null && draft === null`; shows "下書きを確認しています…" while loading; finalized mode calls `useFinalChain.load(currentFinal.id)`; renders `ChainList` on loaded; loading/error/not_found fallback messages.
+  - [x] Page integration tests: auto-load loading indicator; auto-load empty; auto-seed setDraft called; draft present → no setDraft; chain renders in finalized; chain not_found/error renders fallback.
+  - [x] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 `console.*`; 0 `: any`; no raw HTML injection.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — 221/221 tests pass.
+  - [x] G4 security-check — no hosted-LLM SDKs; no PHI in logs/storage; no direct LLM calls outside infrastructure.
+- **Out-of-scope:** Chain editing or merging UI; bulk operations across multiple drafts; non-latest draft selection; auth-gated draft visibility; encounter/patient navigation pages; streaming UI.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; existing draft `content` and final chain `content` excerpts are rendered in the operational-read path per `.claude/rules/local-llm-and-phi.md` §4; no PHI in console/storage/URL.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** molecules (ChainList), hooks (useEncounterDrafts + useFinalChain), services (listDraftsByEncounter), app (page extension)
 
 ---
 

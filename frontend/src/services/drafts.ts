@@ -183,6 +183,46 @@ export async function finalizeRecordDraft(
   }
 }
 
+/** listDraftsByEncounter の戻り値型 */
+export type ListDraftsResult = { kind: "found"; drafts: RecordDraft[] } | { kind: "error" };
+
+/**
+ * エンカウンターに紐づく下書き一覧を取得する (GET /encounters/{encounterId}/drafts)。
+ *
+ * バックエンドは 200 + 空配列 (encounter 不明の場合も含む) を返すため not_found タグは不要。
+ * 返却順は created_at DESC (最新が先頭) — バックエンド BE-009 の契約に従う。
+ *
+ * - 成功: `{ kind: "found", drafts }` — 空配列のこともある
+ * - その他エラー: `{ kind: "error" }`
+ *
+ * PHI (drafts[].content) はログに出力しない。
+ *
+ * @param encounterId  受診 UUID
+ * @param opts  AbortSignal など
+ */
+export async function listDraftsByEncounter(
+  encounterId: string,
+  opts?: { signal?: AbortSignal }
+): Promise<ListDraftsResult> {
+  const path = `/encounters/${encodeURIComponent(encounterId)}/drafts`;
+
+  const result = await apiFetch<RecordDraft[]>(path, {
+    method: "GET",
+    signal: opts?.signal,
+  });
+
+  switch (result.kind) {
+    case "ok":
+      return { kind: "found", drafts: result.data };
+
+    case "not_found":
+    case "validation_error":
+    case "server_error":
+    case "network_error":
+      return { kind: "error" };
+  }
+}
+
 /**
  * 確定カルテを ID で取得する (GET /finals/{finalId})。
  *
