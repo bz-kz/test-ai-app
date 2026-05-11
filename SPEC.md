@@ -89,7 +89,37 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 - **Type safety:** No `any` (TS) and no untyped dicts crossing layer boundaries (Python). Pydantic at every interface boundary.
 - **Architecture:** Frontend is Atomic Design over an Onion-style logic split (services/hooks). Backend is DDD with `domain → usecases → infrastructure → interfaces`.
 - **PHI:** Governed by `.claude/rules/local-llm-and-phi.md`. Masked in logs, never persisted in browser storage, never sent to a hosted LLM.
+- **Authentication:** Every PHI-returning endpoint requires the `X-Clinician-Id` header per the Authentication (PoC) Block. Production-grade auth is a separate Block.
 - **Determinism for tests:** All inference paths use `FakeLocalLLMClient` in unit tests; integration tests against the real `llm` container are tagged and excluded from the default `pytest`/`vitest` run.
+
+## Authentication (PoC)
+
+- **Goal:** Satisfy `.claude/rules/local-llm-and-phi.md` §4 "operational reads stay unmasked but are gated by usecase-level authorisation" by introducing a minimal, replaceable clinician-identification scheme suitable for a local-only PoC. The scheme establishes a load-bearing identifier for audit + authorisation gates; it is NOT a credential-verification system.
+- **Inputs:**
+  - .claude/rules/local-llm-and-phi.md §4 — usecase-level authorisation requirement
+  - CLAUDE.md §2 — local-only PoC scope (no remote / staging / production)
+  - backend/SPEC.md#api-surface — existing error envelope `{ "code": str, "message": str }`
+- **Acceptance:**
+  - [ ] Every PHI-returning HTTP endpoint requires the request to carry an `X-Clinician-Id: <uuid>` header. The header value MUST parse as a v4 UUID; the backend trusts the header verbatim and does NOT verify a signature, session, or password.
+  - [ ] Missing or malformed `X-Clinician-Id` returns 401 with the error envelope `{ "code": "unauthenticated", "message": "Clinician identification required." }`. The 401 message MUST NOT echo the offending header value, request body, or any PHI.
+  - [ ] Endpoints that do NOT return PHI — `/health`, `/ping`, `/openapi.json` — do NOT require the header and continue to respond unchanged.
+  - [ ] The header-derived UUID is the value written to `audit_log.actor` for every PHI-mutating action (patient create, encounter create, draft create/edit/finalize, final correct). It replaces every existing use of `_PLACEHOLDER_CLINICIAN_ID`.
+  - [ ] No request-body field named `clinician_id` is accepted on any endpoint after this Block ships; with `extra='forbid'`-style Pydantic configs already in place, sending `clinician_id` in the body MUST return 422.
+  - [ ] The frontend MUST attach the `X-Clinician-Id` header on every PHI-returning fetch call routed through `src/services/*`. The header value lives in memory only — never in `localStorage`, `sessionStorage`, or `IndexedDB`, consistent with `frontend/SPEC.md#frontend-mission`.
+  - [ ] The header is logged through the existing masking pipeline (`mask_phi` / `short_id`); raw UUIDs do not appear at INFO level.
+- **Out-of-scope:**
+  - Authentication provider integration (SSO, OAuth2/OIDC, SAML).
+  - JWT issuance, JWT verification, JWKS rotation.
+  - Password storage, password reset, MFA, WebAuthn.
+  - Role-based authorisation beyond clinician identity (e.g. admin/auditor splits).
+  - Session management, refresh tokens, logout.
+  - CSRF protection, rate limiting per clinician, account lockout.
+  - mTLS or transport-level identity binding.
+  - Replacing the header scheme with a production design — that requires a separate Spec Block and ADR.
+- **Open-questions:** _(none — header-trust PoC is intentional; production-grade auth is explicitly a follow-up Block)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; the clinician UUID itself is treated as identifying data and logged only through `short_id(...)` at INFO level per `.claude/rules/local-llm-and-phi.md` §3.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
 
 ## Living index
 
