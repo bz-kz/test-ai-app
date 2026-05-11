@@ -11,10 +11,11 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID     | Title                             | Status | Gates Touched          | Owner     |
-| ------ | --------------------------------- | ------ | ---------------------- | --------- |
-| FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7     | Generator |
-| FE-002 | Patient Search by MRN             | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| ID     | Title                             | Status      | Gates Touched              | Owner     |
+| ------ | --------------------------------- | ----------- | -------------------------- | --------- |
+| FE-001 | Frontend foundation + Button atom | done        | G1, G2, G3, G6, G7         | Generator |
+| FE-002 | Patient Search by MRN             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003 | Record Draft generation UI        | in-progress | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 ---
 
@@ -81,6 +82,43 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; MRN, family_name, given_name, date_of_birth are PHI. Never echoed in console.\*, never persisted in browser storage. Use maskPhi for any debug log.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** atoms, molecules, hooks, services, app (page), lib (api.ts + maskPhi.ts)
+
+---
+
+## Record Draft generation UI (FE-003)
+
+- **Goal:** Render `/encounters/[encounterId]/draft` where a clinician types a clinical narrative into a textarea, clicks "下書きを生成", waits while the local Gemma 4 E4B produces a SOAP-shaped draft, and sees the AI output rendered with `<AIIndicatedText>`. Establishes the `TextArea` atom, the `AIIndicatedText` molecule, the five latency-UX tiers, the `useGenerateDraft` hook, and the `createRecordDraft` service.
+- **Inputs:**
+  - frontend/SPEC.md#atomic-design-mapping — TextArea (new atom), AIIndicatedText (new molecule)
+  - frontend/SPEC.md#ai-output-patterns — left border + AI icon; body text must be escaped (no raw HTML injection)
+  - frontend/SPEC.md#latency-ux-budget — five tiers: invisible / spinner / skeleton / skeleton+hint / cancel
+  - frontend/SPEC.md#layer-rules — services own fetch; hooks own state; components no fetch; no any
+  - DESIGN.md#ai-output-patterns — 3px left border in Tertiary Sage (#059669), AI icon
+  - SPEC.md#inference-layer-contract — backend timeout 60s; output ≤1.5k tokens; PHI in prompt allowed
+  - .claude/rules/local-llm-and-phi.md §3 §4 — clinical_input + draft.content are PHI; never in console/storage/URL
+  - backend/app/interfaces/routers/drafts.py — DraftRead shape; 404 encounter_not_found; 503 inference_unavailable
+- **Acceptance:**
+  - [x] `src/components/atoms/TextArea.tsx` — forwardRef, TextAreaProps, error prop, rows=6 default, aria-invalid, disabled opacity, focus ring.
+  - [x] `src/components/atoms/__tests__/TextArea.test.tsx` — renders textarea; disabled/error classes+attrs; onChange/value; ref; aria-invalid.
+  - [x] `src/components/molecules/AIIndicatedText.tsx` — 4px left sage border, AI icon, label "AI 生成", role="article", aria-label, body text rendered via React children (no raw HTML injection).
+  - [x] `src/components/molecules/__tests__/AIIndicatedText.test.tsx` — renders indicator+label+body; accessible name; body text is safe (children not injected as raw HTML).
+  - [x] `src/types/recordDraft.ts` — RecordDraft type matching backend DraftRead shape.
+  - [x] `src/services/drafts.ts` — createRecordDraft(encounterId, clinicalInput, opts) → CreateDraftResult; no PHI in logs.
+  - [x] `src/hooks/useGenerateDraft.ts` — clinicalInput/setClinicalInput/status/draft/error/generate/cancel/elapsedMs; AbortController; ~100ms timer.
+  - [x] `src/hooks/__tests__/useGenerateDraft.test.ts` — happy path; encounter_not_found; inference_unavailable; validation_error; cancel; elapsedMs; service mocked.
+  - [x] `src/app/encounters/[encounterId]/draft/page.tsx` — "use client"; params via React.use(); FormField+TextArea; Button; five latency tiers; AIIndicatedText on success; no console/storage/fetch.
+  - [x] `src/app/encounters/[encounterId]/draft/__tests__/page.test.tsx` — all five latency tiers + success + error states.
+  - [x] Cross-cutting: 0 fetch( in components/app; 0 storage writes; 0 console.\*; 0 : any.
+  - [x] G1 npx tsc --noEmit — 0 errors.
+  - [x] G2 npx eslint . && npx prettier --check . — clean.
+  - [x] G3 npm test -- --run — all tests pass.
+  - [x] G4 security-check — no PHI in logs or storage; no hosted-LLM SDKs.
+- **Out-of-scope:** Draft edit (PATCH), finalize (POST /finalize), ConfidencePill, streaming UI, RecordDraftEditor organism, encounter list UI, patient detail page, linking from patient search.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; consumes BE-006's POST /encounters/{id}/drafts; UI accommodates Gemma's five latency tiers (≤300ms invisible, 300ms–1s spinner, 1–3s skeleton, 3–10s skeleton+hint, >10s cancel).
+- **Data Sensitivity:** PHI; clinical_input (clinician's typed narrative) and draft.content (model output) are PHI per .claude/rules/local-llm-and-phi.md §3. Never echoed in console.\*, never written to browser storage, never appended to URL/searchParams.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** atoms (TextArea), molecules (AIIndicatedText), hooks (useGenerateDraft), services (drafts), app (page)
 
 ---
 
