@@ -2,6 +2,8 @@
 
 POST /encounters/{encounter_id}/drafts   — AI 生成下書きの作成
 GET  /drafts/{draft_id}                 — UUID による下書き取得
+PATCH /drafts/{draft_id}               — 臨床医による下書き編集
+POST /drafts/{draft_id}/finalize        — 下書きを確定カルテに昇格
 
 PHI ルール:
   - clinical_input および draft.content は PHI (自由記述の臨床叙述)。
@@ -23,14 +25,19 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
+    EditRecordDraftCallable,
+    FinalizeDraftCallable,
     FindDraftByIdCallable,
     GenerateRecordDraftCallable,
+    make_edit_record_draft,
+    make_finalize_draft_to_record_final,
     make_find_draft_by_id,
     make_generate_record_draft,
 )
-from app.usecases.errors import DraftNotFound, EncounterNotFound
+from app.usecases.errors import DraftNotFound, EncounterAlreadyFinalized, EncounterNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,32 @@ class DraftRead(BaseModel):
     confidence: float | None
     created_at: datetime
     updated_at: datetime
+
+
+class DraftEdit(BaseModel):
+    """下書き編集リクエストボディ。
+
+    content は PHI を含む臨床叙述。空文字列は不可。
+    clinician_id は認証機能未実装のためリクエストボディで受け取る。
+    将来の auth Block でヘッダー/セッションから注入する予定。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(..., min_length=1)
+    clinician_id: UUID
+
+
+class FinalizeRequest(BaseModel):
+    """下書き確定リクエストボディ。
+
+    clinician_id は認証機能未実装のためリクエストボディで受け取る。
+    将来の auth Block でヘッダー/セッションから注入する予定。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    clinician_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -150,4 +183,94 @@ async def get_draft_by_id(
         confidence=draft.confidence,
         created_at=draft.created_at,
         updated_at=draft.updated_at,
+    )
+
+
+@router.patch(
+    "/drafts/{draft_id}",
+    response_model=DraftRead,
+    responses={
+        404: {"model": ErrorResponse, "description": "下書きが見つからない"},
+    },
+    summary="カルテ下書き編集",
+)
+async def patch_draft(
+    draft_id: UUID,
+    body: DraftEdit,
+    edit: EditRecordDraftCallable = Depends(make_edit_record_draft),
+) -> DraftRead:
+    """臨床医によるカルテ下書きの本文編集。
+
+    更新後の DraftRead を返す。
+    UUID・content はエラーメッセージに含めない。
+    """
+    try:
+        draft = await edit(draft_id, body.content, body.clinician_id)
+    except DraftNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "draft_not_found",
+                "message": "Draft not found.",
+            },
+        ) from None
+
+    return DraftRead(
+        id=draft.id,
+        encounter_id=draft.encounter_id,
+        content=draft.content,
+        confidence=draft.confidence,
+        created_at=draft.created_at,
+        updated_at=draft.updated_at,
+    )
+
+
+@router.post(
+    "/drafts/{draft_id}/finalize",
+    response_model=FinalRead,
+    status_code=201,
+    responses={
+        404: {"model": ErrorResponse, "description": "下書きが見つからない"},
+        409: {"model": ErrorResponse, "description": "受診にすでに確定カルテが存在する"},
+    },
+    summary="下書き確定 (確定カルテ昇格)",
+)
+async def post_finalize_draft(
+    draft_id: UUID,
+    body: FinalizeRequest,
+    finalize: FinalizeDraftCallable = Depends(make_finalize_draft_to_record_final),
+) -> FinalRead:
+    """下書きを確定カルテに昇格させる。
+
+    受診にすでに確定カルテが存在する場合は 409 を返す。
+    UUID・content はエラーメッセージに含めない。
+    レスポンスは finals ルーターの FinalRead 形式で返す。
+    """
+    try:
+        final = await finalize(draft_id, body.clinician_id)
+    except DraftNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "draft_not_found",
+                "message": "Draft not found.",
+            },
+        ) from None
+    except EncounterAlreadyFinalized:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "encounter_already_finalized",
+                "message": "Encounter already has a finalized record.",
+            },
+        ) from None
+
+    return FinalRead(
+        id=final.id,
+        encounter_id=final.encounter_id,
+        content=final.content,
+        confidence=final.confidence,
+        clinician_id=final.clinician_id,
+        predecessor_id=final.predecessor_id,
+        created_at=final.created_at,
     )

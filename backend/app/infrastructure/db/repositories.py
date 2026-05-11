@@ -263,6 +263,18 @@ class RecordFinalRepository:
         row = result.scalar_one_or_none()
         return _final_to_domain(row) if row else None
 
+    async def find_by_encounter(self, encounter_id: UUID) -> RecordFinal | None:
+        """受診 ID に紐づく最初の確定カルテを返す。存在しない場合は None。
+
+        BE-007: 二重確定防止チェックに使用する。
+        predecessor_id チェーンの深さは問わない — 1 件でも存在すれば確定済みとみなす。
+        """
+        result = await self._session.execute(
+            select(RecordFinalORM).where(RecordFinalORM.encounter_id == encounter_id).limit(1)
+        )
+        row = result.scalar_one_or_none()
+        return _final_to_domain(row) if row else None
+
     async def find_chain(self, record_id: UUID) -> list[RecordFinal]:
         """指定 ID から predecessor_id を辿って全前版を返す。
 

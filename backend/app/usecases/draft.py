@@ -117,3 +117,53 @@ async def find_draft_by_id(
         logger.debug("record_draft not found")
         raise DraftNotFound
     return draft
+
+
+async def edit_record_draft(
+    *,
+    draft_id: UUID,
+    content: str,
+    clinician_id: UUID,
+    draft_repo: RecordDraftRepository,
+    audit_repo: AuditLogRepository,
+) -> RecordDraft:
+    """臨床医によるカルテ下書き編集を適用し、更新済みエンティティを返す。
+
+    処理順序:
+      1. 下書きの存在確認 (DraftNotFound を raise する可能性あり)
+      2. RecordDraftRepository.update_content で本文と updated_at を更新
+      3. AuditLog (DRAFT_UPDATE) を追記
+      4. 更新後のエンティティを返す (同一トランザクション内)
+
+    content は PHI のためログに出力しない。
+    """
+    # (1) 下書き存在確認
+    draft = await draft_repo.find_by_id(draft_id)
+    if draft is None:
+        logger.debug("edit_record_draft aborted: draft not found")
+        raise DraftNotFound
+
+    # (2) 本文更新: UTC タイムスタンプはユースケースが所有する
+    now = datetime.now(tz=UTC)
+    await draft_repo.update_content(draft_id, content, now)
+
+    # (3) 監査ログ追記: meta_json は PHI を含まない空オブジェクト
+    audit = AuditLog(
+        id=uuid4(),
+        at=now,
+        actor=clinician_id,
+        action=AuditAction.DRAFT_UPDATE,
+        target_kind="record_draft",
+        target_id=draft_id,
+        meta_json="{}",
+    )
+    await audit_repo.append(audit)
+
+    # PHI をログに書かない — id のみ記録する
+    logger.info("record_draft edited: id=%s clinician_id=%s", draft_id, clinician_id)
+
+    # (4) 更新後エンティティを再取得して返す (update_content は返り値を持たない)
+    updated = await draft_repo.find_by_id(draft_id)
+    # update_content の後は必ず行が存在するため None にはならない
+    assert updated is not None
+    return updated

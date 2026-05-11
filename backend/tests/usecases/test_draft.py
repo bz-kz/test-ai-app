@@ -9,6 +9,10 @@ BE-006 Acceptance:
   (d) FakeLLM が InferenceError → 例外が伝播; 下書き行・監査行なし
   (e) find_draft_by_id ヒット / ミス
   (f) created_at == updated_at (UTC)
+
+BE-007 Acceptance (edit):
+  (g) edit_record_draft が更新済み RecordDraft を返す; updated_at が進む; DRAFT_UPDATE 監査 1 件
+  (h) 存在しない draft_id → DraftNotFound; 監査行なし; 下書き変更なし
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from app.infrastructure.db.repositories import (
 )
 from app.infrastructure.llm.errors import InferenceError
 from app.infrastructure.llm.fake_client import FakeLocalLLMClient
-from app.usecases.draft import find_draft_by_id, generate_record_draft
+from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
 from app.usecases.encounter import create_encounter
 from app.usecases.errors import DraftNotFound, EncounterNotFound
 from app.usecases.patient import create_patient
@@ -276,3 +280,109 @@ async def test_generate_record_draft_timestamps_are_equal_and_utc(session: Async
     assert draft.created_at.replace(tzinfo=None) == draft.updated_at.replace(tzinfo=None)
     # ユースケース内で UTC を明示的に使っていることを確認する
     assert draft.created_at is not None
+
+
+# ---------------------------------------------------------------------------
+# (g) edit_record_draft — 正常系
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_edit_record_draft_returns_updated_entity(session: AsyncSession) -> None:
+    """edit_record_draft が更新済み RecordDraft を返し、content が反映される。"""
+    encounter = await _insert_encounter(session)
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    llm = FakeLocalLLMClient()
+    draft = await generate_record_draft(
+        clinical_input="発熱。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=encounter_repo,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    clinician_id = uuid4()
+    new_content = "【主訴】発熱 (編集済み)"
+    updated = await edit_record_draft(
+        draft_id=draft.id,
+        content=new_content,
+        clinician_id=clinician_id,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    assert updated.id == draft.id
+    assert updated.content == new_content
+    # updated_at が元の created_at 以上であること (SQLite 精度の都合で >= を使う)
+    assert updated.updated_at.replace(tzinfo=None) >= draft.created_at.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_edit_record_draft_writes_one_draft_update_audit(session: AsyncSession) -> None:
+    """edit_record_draft が DRAFT_UPDATE 監査ログを 1 件書く; meta_json="{}"。"""
+    encounter = await _insert_encounter(session)
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    llm = FakeLocalLLMClient()
+    draft = await generate_record_draft(
+        clinical_input="頭痛。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=encounter_repo,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    clinician_id = uuid4()
+    await edit_record_draft(
+        draft_id=draft.id,
+        content="編集後の内容",
+        clinician_id=clinician_id,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    logs = await audit_repo.list_by_target("record_draft", draft.id)
+    # DRAFT_CREATE (生成時) + DRAFT_UPDATE (編集時) の 2 件
+    update_logs = [log for log in logs if log.action == AuditAction.DRAFT_UPDATE]
+    assert len(update_logs) == 1
+    assert update_logs[0].target_id == draft.id
+    assert update_logs[0].actor == clinician_id
+    assert update_logs[0].meta_json == "{}"
+
+
+# ---------------------------------------------------------------------------
+# (h) edit_record_draft — 存在しない draft_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_edit_record_draft_raises_draft_not_found(session: AsyncSession) -> None:
+    """存在しない draft_id で DraftNotFound が raise され、監査行が書かれない。"""
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    nonexistent_id = uuid4()
+    with pytest.raises(DraftNotFound):
+        await edit_record_draft(
+            draft_id=nonexistent_id,
+            content="変更内容",
+            clinician_id=uuid4(),
+            draft_repo=draft_repo,
+            audit_repo=audit_repo,
+        )
+
+    await session.flush()
+    # 監査行が書かれていないことを確認する
+    logs = await audit_repo.list_by_target("record_draft", nonexistent_id)
+    assert len(logs) == 0

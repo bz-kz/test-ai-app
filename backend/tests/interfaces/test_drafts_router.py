@@ -10,6 +10,14 @@ BE-006 Acceptance:
   (e) GET /drafts/{id} 200 — 存在する下書き
   (f) GET /drafts/{id} 404 code="draft_not_found" (UUID 非エコー)
   (g) レスポンスに clinical_input が含まれない
+
+BE-007 Acceptance (PATCH / finalize):
+  (h) PATCH /drafts/{id} 200 — 正常編集
+  (i) PATCH 存在しない draft_id → 404 code="draft_not_found" (UUID 非エコー)
+  (j) PATCH content が空文字 → 422; extra フィールド → 422
+  (k) POST /drafts/{id}/finalize 201 — 正常確定
+  (l) POST finalize 2 回目 → 409 code="encounter_already_finalized" (PHI/UUID 非エコー)
+  (m) POST finalize 存在しない draft_id → 404 code="draft_not_found"
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from app.infrastructure.db.repositories import (
     EncounterRepository,
     PatientRepository,
     RecordDraftRepository,
+    RecordFinalRepository,
 )
 from app.infrastructure.llm.errors import InferenceError
 from app.infrastructure.llm.fake_client import FakeLocalLLMClient
@@ -46,24 +55,29 @@ from app.interfaces.exception_handlers import (
 )
 from app.interfaces.routers.drafts import router as drafts_router
 from app.interfaces.routers.encounters import router as encounters_router
+from app.interfaces.routers.finals import router as finals_router
 from app.interfaces.routers.patients import router as patients_router
 from app.usecases.di import (
     get_llm_client,
     make_create_encounter,
     make_create_patient,
+    make_edit_record_draft,
+    make_finalize_draft_to_record_final,
     make_find_draft_by_id,
     make_find_encounter_by_id,
+    make_find_final_by_id,
     make_find_patient_by_id,
     make_find_patient_by_mrn,
     make_generate_record_draft,
     make_list_encounters_by_patient,
 )
-from app.usecases.draft import find_draft_by_id, generate_record_draft
+from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
     list_encounters_by_patient,
 )
+from app.usecases.final import finalize_draft_to_record_final, find_final_by_id
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
 
 # ---------------------------------------------------------------------------
@@ -100,6 +114,49 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
 
         async def _find(draft_id):  # type: ignore[no-untyped-def]
             return await find_draft_by_id(draft_id=draft_id, draft_repo=draft_repo)
+
+        return _find
+
+    def _override_make_edit_record_draft():  # type: ignore[no-untyped-def]
+        draft_repo = RecordDraftRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _edit(draft_id, content, clinician_id):  # type: ignore[no-untyped-def]
+            draft = await edit_record_draft(
+                draft_id=draft_id,
+                content=content,
+                clinician_id=clinician_id,
+                draft_repo=draft_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return draft
+
+        return _edit
+
+    def _override_make_finalize_draft_to_record_final():  # type: ignore[no-untyped-def]
+        draft_repo = RecordDraftRepository(session)
+        final_repo = RecordFinalRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _finalize(draft_id, clinician_id):  # type: ignore[no-untyped-def]
+            final = await finalize_draft_to_record_final(
+                draft_id=draft_id,
+                clinician_id=clinician_id,
+                draft_repo=draft_repo,
+                final_repo=final_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return final
+
+        return _finalize
+
+    def _override_make_find_final_by_id():  # type: ignore[no-untyped-def]
+        final_repo = RecordFinalRepository(session)
+
+        async def _find(final_id):  # type: ignore[no-untyped-def]
+            return await find_final_by_id(final_id=final_id, final_repo=final_repo)
 
         return _find
 
@@ -194,10 +251,16 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
     test_app.include_router(patients_router, prefix="")
     test_app.include_router(encounters_router, prefix="")
     test_app.include_router(drafts_router, prefix="")
+    test_app.include_router(finals_router, prefix="")
 
     # DI オーバーライド
     test_app.dependency_overrides[make_generate_record_draft] = _override_make_generate_record_draft
     test_app.dependency_overrides[make_find_draft_by_id] = _override_make_find_draft_by_id
+    test_app.dependency_overrides[make_edit_record_draft] = _override_make_edit_record_draft
+    test_app.dependency_overrides[make_finalize_draft_to_record_final] = (
+        _override_make_finalize_draft_to_record_final
+    )
+    test_app.dependency_overrides[make_find_final_by_id] = _override_make_find_final_by_id
     test_app.dependency_overrides[make_create_encounter] = _override_make_create_encounter
     test_app.dependency_overrides[make_find_encounter_by_id] = _override_make_find_encounter_by_id
     test_app.dependency_overrides[make_list_encounters_by_patient] = (
@@ -488,3 +551,231 @@ class TestGetDraftById:
 
         expected = {"id", "encounter_id", "content", "confidence", "created_at", "updated_at"}
         assert set(resp.json().keys()) == expected
+
+
+# ---------------------------------------------------------------------------
+# (h) PATCH /drafts/{id} — 正常編集
+# ---------------------------------------------------------------------------
+
+
+class TestPatchDraft:
+    def test_200_on_valid_edit(self, client: TestClient) -> None:
+        """PATCH /drafts/{id} が 200 と更新済み DraftRead を返す。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFT-P-001").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "初期入力"},
+        ).json()["id"]
+
+        clinician_id = str(uuid4())
+        resp = client.patch(
+            f"/drafts/{draft_id}",
+            json={"content": "編集後の内容", "clinician_id": clinician_id},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == draft_id
+        assert body["content"] == "編集後の内容"
+
+    def test_response_has_draft_read_fields(self, client: TestClient) -> None:
+        """PATCH レスポンスが DraftRead の全フィールドを持つ。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFT-P-002").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "初期入力2"},
+        ).json()["id"]
+
+        resp = client.patch(
+            f"/drafts/{draft_id}",
+            json={"content": "編集後の内容2", "clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 200
+        expected = {"id", "encounter_id", "content", "confidence", "created_at", "updated_at"}
+        assert set(resp.json().keys()) == expected
+
+    # -------------------------------------------------------------------------
+    # (i) PATCH 存在しない draft_id → 404
+    # -------------------------------------------------------------------------
+
+    def test_404_on_nonexistent_draft(self, client: TestClient) -> None:
+        """PATCH /drafts/{id} が存在しない ID で 404 を返す。"""
+        resp = client.patch(
+            f"/drafts/{uuid4()}",
+            json={"content": "内容", "clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["code"] == "draft_not_found"
+
+    def test_404_message_does_not_echo_uuid(self, client: TestClient) -> None:
+        """404 エラーメッセージに draft_id が含まれない (PHI ルール)。"""
+        missing_id = str(uuid4())
+        resp = client.patch(
+            f"/drafts/{missing_id}",
+            json={"content": "内容", "clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 404
+        body = resp.json()
+        assert missing_id not in body.get("message", "")
+
+    # -------------------------------------------------------------------------
+    # (j) PATCH バリデーションエラー
+    # -------------------------------------------------------------------------
+
+    def test_422_on_empty_content(self, client: TestClient) -> None:
+        """PATCH content が空文字で 422 を返す (Field min_length=1)。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFT-P-003").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "初期入力3"},
+        ).json()["id"]
+
+        resp = client.patch(
+            f"/drafts/{draft_id}",
+            json={"content": "", "clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "validation_error"
+
+    def test_422_on_extra_field(self, client: TestClient) -> None:
+        """extra='forbid' により余分フィールドで 422 を返す。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFT-P-004").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "初期入力4"},
+        ).json()["id"]
+
+        resp = client.patch(
+            f"/drafts/{draft_id}",
+            json={"content": "内容", "clinician_id": str(uuid4()), "unexpected": "x"},
+        )
+
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# (k) POST /drafts/{id}/finalize — 正常確定
+# ---------------------------------------------------------------------------
+
+
+class TestFinalizeDraft:
+    def test_201_on_finalize(self, client: TestClient) -> None:
+        """POST /drafts/{id}/finalize が 201 と FinalRead を返す。"""
+        patient_id = _create_patient(client, mrn="MRN-FINAL-R-001").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "確定テスト入力"},
+        ).json()["id"]
+
+        clinician_id = str(uuid4())
+        resp = client.post(
+            f"/drafts/{draft_id}/finalize",
+            json={"clinician_id": clinician_id},
+        )
+
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["encounter_id"] == encounter_id
+        assert body["clinician_id"] == clinician_id
+        assert body["predecessor_id"] is None
+        assert "id" in body
+        assert "content" in body
+        assert "created_at" in body
+
+    def test_response_has_final_read_fields(self, client: TestClient) -> None:
+        """確定レスポンスが FinalRead の全フィールドを持つ。"""
+        patient_id = _create_patient(client, mrn="MRN-FINAL-R-002").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "確定テスト入力2"},
+        ).json()["id"]
+
+        resp = client.post(
+            f"/drafts/{draft_id}/finalize",
+            json={"clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 201
+        expected = {
+            "id",
+            "encounter_id",
+            "content",
+            "confidence",
+            "clinician_id",
+            "predecessor_id",
+            "created_at",
+        }
+        assert set(resp.json().keys()) == expected
+
+    # -------------------------------------------------------------------------
+    # (l) POST finalize 2 回目 → 409
+    # -------------------------------------------------------------------------
+
+    def test_409_on_double_finalize(self, client: TestClient) -> None:
+        """同一受診で 2 回確定しようとすると 409 を返す。"""
+        patient_id = _create_patient(client, mrn="MRN-FINAL-R-003").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "二重確定テスト"},
+        ).json()["id"]
+
+        client.post(f"/drafts/{draft_id}/finalize", json={"clinician_id": str(uuid4())})
+
+        # 2 回目の確定
+        resp2 = client.post(
+            f"/drafts/{draft_id}/finalize",
+            json={"clinician_id": str(uuid4())},
+        )
+
+        assert resp2.status_code == 409
+        body = resp2.json()
+        assert body["code"] == "encounter_already_finalized"
+
+    def test_409_message_does_not_echo_phi(self, client: TestClient) -> None:
+        """409 エラーメッセージに UUID・PHI が含まれない。"""
+        patient_id = _create_patient(client, mrn="MRN-FINAL-R-004").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "SENSITIVE_PHI_409_TEST"},
+        ).json()["id"]
+
+        client.post(f"/drafts/{draft_id}/finalize", json={"clinician_id": str(uuid4())})
+        resp2 = client.post(
+            f"/drafts/{draft_id}/finalize",
+            json={"clinician_id": str(uuid4())},
+        )
+
+        assert resp2.status_code == 409
+        body = resp2.json()
+        # UUID や PHI テキストがメッセージに含まれない
+        assert draft_id not in body.get("message", "")
+        assert encounter_id not in body.get("message", "")
+        assert "SENSITIVE_PHI_409_TEST" not in body.get("message", "")
+
+    # -------------------------------------------------------------------------
+    # (m) POST finalize 存在しない draft_id → 404
+    # -------------------------------------------------------------------------
+
+    def test_404_on_nonexistent_draft(self, client: TestClient) -> None:
+        """存在しない draft_id で 404 を返す。"""
+        resp = client.post(
+            f"/drafts/{uuid4()}/finalize",
+            json={"clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["code"] == "draft_not_found"

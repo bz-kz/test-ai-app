@@ -14,22 +14,24 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.entities import Encounter, Patient, RecordDraft
+from app.domain.entities import Encounter, Patient, RecordDraft, RecordFinal
 from app.infrastructure.db.engine import get_session
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
     EncounterRepository,
     PatientRepository,
     RecordDraftRepository,
+    RecordFinalRepository,
 )
 from app.infrastructure.llm import make_llm_client
 from app.infrastructure.llm.client import LocalLLMClient
-from app.usecases.draft import find_draft_by_id, generate_record_draft
+from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
     list_encounters_by_patient,
 )
+from app.usecases.final import finalize_draft_to_record_final, find_final_by_id
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
 
 # ---------------------------------------------------------------------------
@@ -290,6 +292,99 @@ def make_find_draft_by_id(
         return await find_draft_by_id(
             draft_id=draft_id,
             draft_repo=draft_repo,
+        )
+
+    return _find
+
+
+# ---------------------------------------------------------------------------
+# 下書き編集ユースケースファクトリ型エイリアス
+# ---------------------------------------------------------------------------
+
+EditRecordDraftCallable = Callable[
+    [UUID, str, UUID],
+    Coroutine[Any, Any, RecordDraft],
+]
+
+
+# ---------------------------------------------------------------------------
+# 確定カルテユースケースファクトリ型エイリアス
+# ---------------------------------------------------------------------------
+
+FinalizeDraftCallable = Callable[
+    [UUID, UUID],
+    Coroutine[Any, Any, RecordFinal],
+]
+
+FindFinalByIdCallable = Callable[
+    [UUID],
+    Coroutine[Any, Any, RecordFinal],
+]
+
+
+# ---------------------------------------------------------------------------
+# 下書き編集ユースケースファクトリ依存
+# ---------------------------------------------------------------------------
+
+
+def make_edit_record_draft(
+    session: AsyncSession = Depends(_get_db_session),
+) -> EditRecordDraftCallable:
+    """edit_record_draft ユースケースをセッション付きでクロージャとして返す。"""
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    async def _edit(draft_id: UUID, content: str, clinician_id: UUID) -> RecordDraft:
+        draft = await edit_record_draft(
+            draft_id=draft_id,
+            content=content,
+            clinician_id=clinician_id,
+            draft_repo=draft_repo,
+            audit_repo=audit_repo,
+        )
+        await session.commit()
+        return draft
+
+    return _edit
+
+
+# ---------------------------------------------------------------------------
+# 確定カルテユースケースファクトリ依存
+# ---------------------------------------------------------------------------
+
+
+def make_finalize_draft_to_record_final(
+    session: AsyncSession = Depends(_get_db_session),
+) -> FinalizeDraftCallable:
+    """finalize_draft_to_record_final ユースケースをセッション付きでクロージャとして返す。"""
+    draft_repo = RecordDraftRepository(session)
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    async def _finalize(draft_id: UUID, clinician_id: UUID) -> RecordFinal:
+        final = await finalize_draft_to_record_final(
+            draft_id=draft_id,
+            clinician_id=clinician_id,
+            draft_repo=draft_repo,
+            final_repo=final_repo,
+            audit_repo=audit_repo,
+        )
+        await session.commit()
+        return final
+
+    return _finalize
+
+
+def make_find_final_by_id(
+    session: AsyncSession = Depends(_get_db_session),
+) -> FindFinalByIdCallable:
+    """find_final_by_id ユースケースをセッション付きでクロージャとして返す。"""
+    final_repo = RecordFinalRepository(session)
+
+    async def _find(final_id: UUID) -> RecordFinal:
+        return await find_final_by_id(
+            final_id=final_id,
+            final_repo=final_repo,
         )
 
     return _find

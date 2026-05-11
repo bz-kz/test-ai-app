@@ -12,7 +12,9 @@ from app.infrastructure.llm.errors import InferenceError
 
 __all__ = [
     "DraftNotFound",
+    "EncounterAlreadyFinalized",
     "EncounterNotFound",
+    "FinalNotFound",
     "InferenceError",
     "MRNConflict",
     "PatientNotFound",
@@ -48,4 +50,21 @@ class DraftNotFound(Exception):
 
     UUID 値を属性として保持しない (エラーメッセージへの漏洩防止)。
     インターフェース層が 404 に変換する。
+    """
+
+
+class FinalNotFound(Exception):
+    """指定された final_id の確定カルテが存在しない場合に raise する。
+
+    UUID 値を属性として保持しない (エラーメッセージへの漏洩防止)。
+    インターフェース層が 404 に変換する。
+    """
+
+
+class EncounterAlreadyFinalized(Exception):
+    """指定受診にすでに確定カルテが存在する場合に raise する。
+
+    UUID 値・PHI を属性として保持しない (エラーメッセージへの漏洩防止)。
+    インターフェース層が 409 に変換する。
+    訂正版の作成 (predecessor_id チェーン) は BE-008 のスコープ。
     """

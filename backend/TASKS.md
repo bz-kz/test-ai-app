@@ -20,6 +20,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-004  | Patient endpoints       | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-005  | Encounter endpoints     | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-006  | Record Draft generation | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize | qa     | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -213,6 +214,40 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 
 ---
 
+## Draft edit and finalize (BE-007)
+
+- **Goal:** Deliver the clinician-facing lifecycle endpoints after BE-006's AI draft generation. Three endpoints: PATCH `/drafts/{draft_id}` (edit draft, writes DRAFT_UPDATE audit), POST `/drafts/{draft_id}/finalize` (promote draft to immutable `record_final`, writes FINAL_CREATE audit, 409 if encounter already has a final), GET `/finals/{final_id}` (read a finalized record by id).
+- **Inputs:**
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#layer-boundaries — DDD direction
+  - backend/SPEC.md#persistence — RecordDraftRepository.update_content, RecordFinalRepository.add/find_by_id/find_by_encounter
+  - SPEC.md#domain-glossary — record_draft, record_final, clinician
+  - .claude/rules/local-llm-and-phi.md — draft/final content is PHI; mask before logger
+  - backend/app/domain/entities.py — RecordDraft, RecordFinal, AuditAction.DRAFT_UPDATE, AuditAction.FINAL_CREATE
+  - backend/app/infrastructure/db/repositories.py — repositories used
+  - backend/app/usecases/di.py — DI seam extended
+  - backend/app/usecases/errors.py — DraftNotFound already exists; FinalNotFound and EncounterAlreadyFinalized added
+- **Acceptance:**
+  - [x] edit_record_draft usecase in draft.py; DRAFT_UPDATE audit; DraftNotFound on miss
+  - [x] finalize_draft_to_record_final and find_final_by_id in final.py; FINAL_CREATE audit; DraftNotFound/EncounterAlreadyFinalized on error
+  - [x] FinalNotFound and EncounterAlreadyFinalized added to errors.py
+  - [x] RecordFinalRepository.find_by_encounter added to repositories.py
+  - [x] DI factories: make_edit_record_draft, make_finalize_draft_to_record_final, make_find_final_by_id
+  - [x] PATCH /drafts/{draft_id} (200 DraftRead / 404 / 422); POST /drafts/{draft_id}/finalize (201 FinalRead / 404 / 409 / 422); GET /finals/{final_id} (200 FinalRead / 404)
+  - [x] FinalRead schema in finals.py router; DraftEdit and FinalizeRequest in drafts.py router
+  - [x] PHI never in logger calls; audit meta_json="{}"; error messages PHI-free
+  - [x] Tests: usecases/test_draft.py (edit cases), usecases/test_final.py (new), interfaces/test_drafts_router.py (PATCH+finalize), interfaces/test_finals_router.py (new)
+  - [x] G1 pyright 0 errors, G2 ruff clean, G3 pytest 160 pass
+- **Out-of-scope:** Corrections/predecessor_id chain (BE-008). Listing drafts/finals. Auth. Soft delete. Frontend UI.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; draft/final content is free-text clinical narrative; masked before any logger call; never in error envelopes; never in audit meta.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** usecases (extend), interfaces (extend drafts router + new finals router); infrastructure (add find_by_encounter to RecordFinalRepository)
+- **Status:** qa
+
+---
+
 ## Record Draft generation (BE-006)
 
 - **Goal:** Generate an AI-drafted medical record (SOAP-shaped plain text) for an existing encounter using `gemma4:e4b` via the existing `LocalLLMClient` Protocol, persist it as a `record_draft` row, write a `DRAFT_CREATE` audit row, and return it. Also expose a read endpoint for fetching a draft by id. Two endpoints: POST `/encounters/{encounter_id}/drafts`, GET `/drafts/{draft_id}`.
@@ -244,4 +279,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; clinical_input and draft.content are PHI; masked before logger; allowed in prompt body to local model only.
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** usecases (extend), interfaces (new router + extend exception_handlers)
-- **Status:** in-progress
+- **Status:** done
