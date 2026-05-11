@@ -16,7 +16,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7         | Generator |
 | FE-002 | Patient Search by MRN             | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | FE-003 | Record Draft generation UI        | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004 | Draft edit and finalize UI        | qa     | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-004 | Draft edit and finalize UI        | done   | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
