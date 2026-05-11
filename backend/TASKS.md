@@ -22,7 +22,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
 | BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain | qa     | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -350,4 +350,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; `content` is free-text clinical narrative; masked before any logger call; never in error envelopes; `meta_json="{}"` for FINAL_CORRECT (predecessor lives on the row)
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases (extend), interfaces (extend finals + encounters routers); infrastructure (one read-only method on RecordFinalRepository)
-- **Status:** qa
+- **Status:** done
