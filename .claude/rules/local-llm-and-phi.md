@@ -8,12 +8,17 @@ This rule is non-negotiable. It binds every agent (Planner, Generator, Evaluator
 - No code path may import or call a hosted-LLM SDK (OpenAI, Anthropic, Google AI, Bedrock, Azure OpenAI, etc.) at runtime. Detection of such an import is a CRITICAL G4 finding.
 - The `docker-compose.yml` MUST NOT publish the `llm` or `postgres` ports to the host. Internal-only.
 - The backend container MUST NOT define `extra_hosts` that resolve to public IPs.
+- All ASR (audio transcription) calls MUST go to the in-network `asr` service (`http://asr:<port>`). The hostname is `asr`, never `localhost` ora public domain.
+- No code path may use the browser Web Speech API (`webkitSpeechRecognition`, `window.SpeechRecognition`) or any hosted ASR SDK (Deepgram, AssemblyAI, Azure Speech, Google Cloud Speech, Amazon Transcribe). Detection of such an import or API reference is a CRITICAL G4 finding.
+- The `docker-compose.yml` MUST NOT publish the `asr` port to the host. Internal-only.
 
 ## 2. Inference layer boundary
 
 - All inference calls go through `app/infrastructure/llm/`. The class implementing the call is `LocalLLMClient` (interface) with a concrete `OllamaLocalLLMClient` and a test-only `FakeLocalLLMClient`.
 - `app/domain/` MUST NOT import from `app/infrastructure/`. Domain stays inference-free.
 - `app/usecases/` is the only layer that may construct or invoke an `LocalLLMClient`.
+- All ASR calls go through `app/infrastructure/asr/`. The class implementing the call is `LocalASRClient` (interface) with a concrete
+`WhisperCppLocalASRClient` and a test-only `FakeLocalASRClient`. A direct `httpx.post("http://asr:...")` outside `app/infrastructure/asr/` is a G7 architecture failure even if functionally correct.
 - A direct `httpx.post("http://llm:...")` outside `app/infrastructure/llm/` is a G7 architecture failure even if functionally correct.
 
 ## 3. PHI in prompts
@@ -24,6 +29,7 @@ PHI = any of: patient name, MRN, DOB, address, phone, free-text clinical narrati
 - Before any `logger.info` / `logger.warning` / `print` / `console.log` of an inference request or response, run the value through the masking utility (`mask_phi(...)` backend, `maskPhi(...)` frontend).
 - Stack traces from inference exceptions MUST scrub the prompt body. Use the masked-exception wrapper, not the raw exception.
 - Tests MAY use synthetic-only PHI fixtures. Real PHI MUST NOT enter the repo.
+- Audio bytes, audio file names, and ASR transcripts MUST NOT appear in logs. Mask via `mask_phi(...)` (backend) / `maskPhi(...)` (frontend) on any reference. Audio MUST NOT be persisted to disk past the request lifetime; never to DB; never to browser storage. ASR transcripts inherit the same masking expectation as `clinical_input`.
 
 ## 4. PHI in storage and transit
 
@@ -52,6 +58,18 @@ grep -RE 'http://llm[: ]|ollama' backend/app | grep -v '^backend/app/infrastruct
 
 # No public-internet egress in compose.
 grep -E 'extra_hosts|host.docker.internal' docker-compose.yml || true
+
+# No hosted-ASR SDKs in dependencies.
+grep -E '"(deepgram|assemblyai|@aws-sdk/client-transcribe|@azure/cognitiveservices-speech-sdk|@google-cloud/speech)"' frontend/package.json backend/requirements.txt && exit 1 || true
+
+# No browser Web Speech API.
+grep -RE 'webkitSpeechRecognition|window\.SpeechRecognition' frontend/src && exit 1 || true
+
+# No direct ASR calls outside the infrastructure layer.
+grep -RE 'http://asr[: ]|whisper' backend/app | grep -v '^backend/app/infrastructure/asr/' && exit 1 || true
+
+# Frontend mic capture stays in dedicated voice components.
+grep -RE 'getUserMedia|MediaRecorder' frontend/src | grep -vE '(VoiceCapture|RecordButton|useVoiceCapture)' && exit 1 || true
 ```
 
 A non-clean result on any of the first two is CRITICAL.

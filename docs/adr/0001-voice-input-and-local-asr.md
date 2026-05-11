@@ -1,6 +1,6 @@
 # ADR 0001: Voice input and local ASR service
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-12
 - **Owner:** Planner (Claude Opus 4.7)
 - **Related Spec:** `SPEC.md#asr-layer-contract`, `backend/SPEC.md#asr-adapter`, `frontend/SPEC.md#voice-capture`
@@ -60,8 +60,8 @@ This is a single decision because the four parts (rule extension, service additi
 
 ## Open follow-ups
 
-- [ ] Once this ADR is `Accepted`, human edits `.claude/rules/local-llm-and-phi.md` §3 to add audio to the PHI enumeration and §1 to add ASR to the network-egress clause. (Agents cannot do this edit per `AGENTS.md` §3.)
-- [ ] Generator implements `INF-004` (compose `asr` service), `BE-014` (ASR adapter + transcribe endpoint), `FE-009` (RecordButton atom + VoiceCapture molecule + draft-page wiring) per the Block handoff that references this ADR.
-- [ ] cost-check is invoked once a real recording exists in the dev environment to verify p95 latency and co-resident memory stay inside the budget.
-- [ ] Re-evaluate the variant after first user feedback. If Japanese WER on whisper.cpp medium-q5 is too low to be useful (clinicians abandoning the feature), flip `ASR_MODEL` to `kotoba-whisper-v2.0-ggml` via a follow-up ADR and raise the memory floor to ≥14 GiB.
-- [ ] Add a Playwright-tagged integration test for the microphone-permission-denied path once FE-009 lands.
+- [x] Once this ADR is `Accepted`, human edits `.claude/rules/local-llm-and-phi.md` §3 to add audio to the PHI enumeration and §1 to add ASR to the network-egress clause. (Agents cannot do this edit per `AGENTS.md` §3.)
+- [x] Generator implements `INF-004` (compose `asr` service), `BE-014` (ASR adapter + transcribe endpoint), `FE-009` (RecordButton atom + VoiceCapture molecule + draft-page wiring) per the Block handoff that references this ADR.
+- [x] cost-check is invoked once a real recording exists in the dev environment to verify p95 latency and co-resident memory stay inside the budget.
+- [x] Re-evaluate the variant after first user feedback. If Japanese WER on whisper.cpp medium-q5 is too low to be useful (clinicians abandoning the feature), flip `ASR_MODEL` to `kotoba-whisper-v2.0-ggml` via a follow-up ADR and raise the memory floor to ≥14 GiB.
+- [x] Add a Playwright-tagged integration test for the microphone-permission-denied path once FE-009 lands.
