@@ -13,7 +13,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 | ID     | Title                             | Status | Gates Touched      | Owner     |
 | ------ | --------------------------------- | ------ | ------------------ | --------- |
-| FE-001 | Frontend foundation + Button atom | qa     | G1, G2, G3, G6, G7 | Generator |
+| FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7 | Generator |
 
 ---
 
