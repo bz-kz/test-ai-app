@@ -11,14 +11,15 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title               | Status | Gates Touched          | Owner     |
-| ------- | ------------------- | ------ | ---------------------- | --------- |
-| INF-001 | Runtime Topology    | done   | G0                     | Generator |
-| BE-001  | Inference Adapter   | done   | G1, G2, G3, G4, G5, G7 | Generator |
-| BE-002  | Persistence         | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-003  | API Surface         | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-004  | Patient endpoints   | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-005  | Encounter endpoints | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| ID      | Title                   | Status      | Gates Touched              | Owner     |
+| ------- | ----------------------- | ----------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology        | done        | G0                         | Generator |
+| BE-001  | Inference Adapter       | done        | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation | in-progress | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -209,3 +210,38 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases (extend), interfaces (new router)
 - **Status:** done
+
+---
+
+## Record Draft generation (BE-006)
+
+- **Goal:** Generate an AI-drafted medical record (SOAP-shaped plain text) for an existing encounter using `gemma4:e4b` via the existing `LocalLLMClient` Protocol, persist it as a `record_draft` row, write a `DRAFT_CREATE` audit row, and return it. Also expose a read endpoint for fetching a draft by id. Two endpoints: POST `/encounters/{encounter_id}/drafts`, GET `/drafts/{draft_id}`.
+- **Inputs:**
+  - SPEC.md#inference-layer-contract — `LocalLLMClient.generate(prompt, params)`; timeout 60 s; raises `InferenceError` on non-200/timeout with masked context.
+  - SPEC.md#hardware-assumptions — first-token p95 ≤1 s; total p95 ≤6 s for 1k output tokens; VRAM peak ≤6 GB at Q4_0.
+  - backend/SPEC.md#inference-adapter — `app/infrastructure/llm/` is the only layer that talks to the LLM; `FakeLocalLLMClient` is the default in unit tests.
+  - backend/SPEC.md#layer-boundaries — DDD direction; router talks to usecase-DI seam only.
+  - backend/SPEC.md#persistence — `RecordDraftRepository.add/find_by_id`, `EncounterRepository.find_by_id`, `AuditLogRepository.append(AuditAction.DRAFT_CREATE, ...)`.
+  - .claude/rules/local-llm-and-phi.md — clinical_input and draft.content are PHI; masked before logger; allowed in prompt body to local model only.
+  - backend/app/domain/entities.py — `RecordDraft`, `AuditAction.DRAFT_CREATE`.
+  - backend/app/infrastructure/llm/{client.py,types.py,fake_client.py,errors.py} — Protocol, `GenerateParams`, `GenerateResponse`, `InferenceError`.
+  - backend/app/usecases/di.py — existing usecase-layer DI seam to extend.
+  - backend/app/usecases/errors.py — `EncounterNotFound` already exists; add `DraftNotFound`.
+  - backend/app/interfaces/routers/{patients.py,encounters.py} — patterns to follow for router shape, error translation, OpenAPI responses.
+- **Acceptance:**
+  - [x] **Prompt module.** `app/usecases/prompts.py` defines `build_draft_prompt(clinical_input: str) -> str`. Deterministic, no logs, no LLM call. DRAFT_SYSTEM_PROMPT constant. Japanese SOAP format.
+  - [x] **Usecase.** `app/usecases/draft.py` exports `generate_record_draft` and `find_draft_by_id`. generate_record_draft: (1) verify encounter; (2) build prompt; (3) call llm.generate; (4) persist RecordDraft + AuditLog in same transaction; (5) return draft. InferenceError propagates.
+  - [x] **Router-level inference error mapping.** `inference_error_handler` in `exception_handlers.py` maps InferenceError → 503 `inference_unavailable`. Registered in main.py before unhandled_exception_handler.
+  - [x] **Router.** `app/interfaces/routers/drafts.py`: POST `/encounters/{encounter_id}/drafts` (201/404/503), GET `/drafts/{draft_id}` (200/404).
+  - [x] **Pydantic models.** `DraftCreate` (clinical_input, min_length=1, extra=forbid), `DraftRead` (id, encounter_id, content, confidence, created_at, updated_at).
+  - [x] **PHI handling.** No PHI in logger calls; audit meta_json="{}"; InferenceError propagated as-is.
+  - [x] **Usecase-DI seam.** `make_generate_record_draft`, `make_find_draft_by_id`, `get_llm_client` in di.py. Singleton via `make_llm_client()` factory.
+  - [x] **response_model=** on every endpoint with 404/503 error models.
+  - [x] **Tests.** `tests/usecases/test_draft.py`, `tests/usecases/test_prompts.py`, `tests/interfaces/test_drafts_router.py`.
+- **Out-of-scope:** Streaming endpoint; draft edit/update; regenerate as distinct action; draft approval; list drafts; confidence-pill UX.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; model `gemma4:e4b`; prompt ≤4k tokens, output ≤1.5k tokens; timeout 60 s.
+- **Data Sensitivity:** PHI; clinical_input and draft.content are PHI; masked before logger; allowed in prompt body to local model only.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** usecases (extend), interfaces (new router + extend exception_handlers)
+- **Status:** in-progress

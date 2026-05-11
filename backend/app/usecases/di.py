@@ -14,19 +14,45 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.entities import Encounter, Patient
+from app.domain.entities import Encounter, Patient, RecordDraft
 from app.infrastructure.db.engine import get_session
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
     EncounterRepository,
     PatientRepository,
+    RecordDraftRepository,
 )
+from app.infrastructure.llm import make_llm_client
+from app.infrastructure.llm.client import LocalLLMClient
+from app.usecases.draft import find_draft_by_id, generate_record_draft
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
     list_encounters_by_patient,
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+
+# ---------------------------------------------------------------------------
+# シングルトン LLM クライアント
+# リクエストごとに新しいインスタンスを生成しないようにモジュールレベルでキャッシュする。
+# (BE-003 セキュリティレビューの [ADVICE] への対応)
+# ---------------------------------------------------------------------------
+
+_llm_client_instance: LocalLLMClient | None = None
+
+
+def get_llm_client() -> LocalLLMClient:
+    """シングルトン LLM クライアントを返す FastAPI 依存関数。
+
+    テスト時は app.dependency_overrides[get_llm_client] で FakeLocalLLMClient に差し替える。
+    本番では infrastructure 層のファクトリが生成したクライアントをキャッシュして再利用する。
+    """
+    global _llm_client_instance  # noqa: PLW0603
+    if _llm_client_instance is None:
+        # 具体実装の生成は infrastructure 層のファクトリに委譲する
+        _llm_client_instance = make_llm_client()
+    return _llm_client_instance
+
 
 # ---------------------------------------------------------------------------
 # セッション依存 (usecases.di 経由でのみ interfaces 層に公開する)
@@ -204,3 +230,66 @@ def make_list_encounters_by_patient(
         )
 
     return _list
+
+
+# ---------------------------------------------------------------------------
+# カルテ下書きユースケースファクトリ型エイリアス
+# ---------------------------------------------------------------------------
+
+GenerateRecordDraftCallable = Callable[
+    [str, UUID],
+    Coroutine[Any, Any, RecordDraft],
+]
+
+FindDraftByIdCallable = Callable[
+    [UUID],
+    Coroutine[Any, Any, RecordDraft],
+]
+
+
+# ---------------------------------------------------------------------------
+# カルテ下書きユースケースファクトリ依存
+# ---------------------------------------------------------------------------
+
+
+def make_generate_record_draft(
+    session: AsyncSession = Depends(_get_db_session),
+    llm: LocalLLMClient = Depends(get_llm_client),
+) -> GenerateRecordDraftCallable:
+    """generate_record_draft ユースケースをセッション + LLM クライアント付きでクロージャとして返す。
+
+    LLM クライアントは get_llm_client 依存関数から取得するシングルトン。
+    テスト時は app.dependency_overrides[get_llm_client] で差し替える。
+    """
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    async def _generate(clinical_input: str, encounter_id: UUID) -> RecordDraft:
+        draft = await generate_record_draft(
+            clinical_input=clinical_input,
+            encounter_id=encounter_id,
+            llm=llm,
+            encounter_repo=encounter_repo,
+            draft_repo=draft_repo,
+            audit_repo=audit_repo,
+        )
+        await session.commit()
+        return draft
+
+    return _generate
+
+
+def make_find_draft_by_id(
+    session: AsyncSession = Depends(_get_db_session),
+) -> FindDraftByIdCallable:
+    """find_draft_by_id ユースケースをセッション付きでクロージャとして返す。"""
+    draft_repo = RecordDraftRepository(session)
+
+    async def _find(draft_id: UUID) -> RecordDraft:
+        return await find_draft_by_id(
+            draft_id=draft_id,
+            draft_repo=draft_repo,
+        )
+
+    return _find

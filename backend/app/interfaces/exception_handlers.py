@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.domain.phi import mask_phi
+from app.infrastructure.llm.errors import InferenceError
 
 from .schemas import ErrorResponse
 
@@ -118,6 +119,29 @@ async def request_validation_exception_handler(
         field_summary,
     )
     return JSONResponse(status_code=422, content=body.model_dump())
+
+
+async def inference_error_handler(
+    request: Request,
+    exc: InferenceError,
+) -> JSONResponse:
+    """InferenceError (LLM 呼び出し失敗) を 503 に変換する。
+
+    exc.masked_context には PHI マスク済みのコンテキストが含まれる (BE-001 実装)。
+    プロンプト原文は __str__ にも含まれないため、そのまま WARNING ログに出力できる。
+    レスポンスボディには PHI・プロンプト内容を一切含めない。
+    """
+    # masked_context は BE-001 の InferenceError が生成するマスク済み文字列
+    logger.warning(
+        "InferenceError at %s: %s",
+        request.url.path,
+        exc.masked_context,
+    )
+    body = ErrorResponse(
+        code="inference_unavailable",
+        message="Inference service is temporarily unavailable.",
+    )
+    return JSONResponse(status_code=503, content=body.model_dump())
 
 
 async def unhandled_exception_handler(

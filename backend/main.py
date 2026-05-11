@@ -9,12 +9,14 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.infrastructure.llm import OllamaLocalLLMClient
+from app.infrastructure.llm import InferenceError, OllamaLocalLLMClient
 from app.interfaces.exception_handlers import (
     http_exception_handler,
+    inference_error_handler,
     request_validation_exception_handler,
     unhandled_exception_handler,
 )
+from app.interfaces.routers.drafts import router as drafts_router
 from app.interfaces.routers.encounters import router as encounters_router
 from app.interfaces.routers.patients import router as patients_router
 from app.interfaces.schemas import ErrorResponse
@@ -36,6 +38,8 @@ app.add_exception_handler(
     RequestValidationError,
     request_validation_exception_handler,  # type: ignore[arg-type]
 )
+# InferenceError は Exception のサブクラスなので unhandled_exception_handler より先に登録する
+app.add_exception_handler(InferenceError, inference_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # ---------------------------------------------------------------------------
@@ -44,6 +48,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(patients_router, prefix="")
 app.include_router(encounters_router, prefix="")
+app.include_router(drafts_router, prefix="")
 
 # ---------------------------------------------------------------------------
 # 既存エンドポイント: /ping, /health

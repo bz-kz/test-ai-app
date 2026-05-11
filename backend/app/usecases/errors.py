@@ -29,3 +29,11 @@ class EncounterNotFound(Exception):
     UUID 値を属性として保持しない (エラーメッセージへの漏洩防止)。
     インターフェース層が 404 に変換する。
     """
+
+
+class DraftNotFound(Exception):
+    """指定された draft_id のカルテ下書きが存在しない場合に raise する。
+
+    UUID 値を属性として保持しない (エラーメッセージへの漏洩防止)。
+    インターフェース層が 404 に変換する。
+    """
