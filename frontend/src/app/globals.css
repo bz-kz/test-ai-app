@@ -18,14 +18,19 @@
   --font-body: var(--font-dm-sans), sans-serif;
   --font-mono: var(--font-fira-code), monospace;
 
-  /* Spacing scale (DESIGN.md §Spacing) */
+  /* Spacing scale (DESIGN.md §Spacing)
+   *
+   * 注意 (Tailwind 4): `--spacing-2xl` / `--spacing-3xl` は
+   * `max-w-2xl` / `max-w-3xl` などの組み込みユーティリティと衝突するため
+   * @theme には登録しない (登録すると container 幅が 48px/64px に縮む)。
+   * 必要な箇所では Tailwind の任意値 `p-[48px]` / `gap-[64px]` で対応する。
+   * xs..xl は組み込み Tailwind ユーティリティと衝突しないため許容。
+   */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
   --spacing-lg: 24px;
   --spacing-xl: 32px;
-  --spacing-2xl: 48px;
-  --spacing-3xl: 64px;
 
   /* Border radius (DESIGN.md §Border Radius) */
   --radius-sm: 4px;
