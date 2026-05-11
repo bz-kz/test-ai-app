@@ -13,3 +13,19 @@ class MRNConflict(Exception):
     PHI (MRN 値) を属性として保持しない。
     インターフェース層が 409 に変換する。
     """
+
+
+class PatientNotFound(Exception):
+    """指定された patient_id の患者が存在しない場合に raise する。
+
+    UUID 値を属性として保持しない (エラーメッセージへの漏洩防止)。
+    インターフェース層が 404 に変換する。
+    """
+
+
+class EncounterNotFound(Exception):
+    """指定された encounter_id の受診が存在しない場合に raise する。
+
+    UUID 値を属性として保持しない (エラーメッセージへの漏洩防止)。
+    インターフェース層が 404 に変換する。
+    """

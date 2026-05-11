@@ -11,13 +11,14 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title             | Status | Gates Touched          | Owner     |
-| ------- | ----------------- | ------ | ---------------------- | --------- |
-| INF-001 | Runtime Topology  | done   | G0                     | Generator |
-| BE-001  | Inference Adapter | done   | G1, G2, G3, G4, G5, G7 | Generator |
-| BE-002  | Persistence       | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-003  | API Surface       | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-004  | Patient endpoints | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| ID      | Title               | Status | Gates Touched          | Owner     |
+| ------- | ------------------- | ------ | ---------------------- | --------- |
+| INF-001 | Runtime Topology    | done   | G0                     | Generator |
+| BE-001  | Inference Adapter   | done   | G1, G2, G3, G4, G5, G7 | Generator |
+| BE-002  | Persistence         | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-003  | API Surface         | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-004  | Patient endpoints   | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-005  | Encounter endpoints | qa     | G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -173,3 +174,38 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases (new), interfaces (new router)
 - **Status:** done
+
+---
+
+## Encounter endpoints (BE-005)
+
+- **Goal:** Deliver the encounter feature surface — create an encounter (verifying the referenced patient exists), look one up by id, and list encounters for a patient. Three endpoints: POST `/encounters`, GET `/encounters/{encounter_id}`, GET `/patients/{patient_id}/encounters`.
+- **Inputs:**
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#layer-boundaries — DDD direction
+  - backend/SPEC.md#persistence — EncounterRepository, PatientRepository, AuditLogRepository
+  - SPEC.md#domain-glossary — `encounter` canonical identifier; `clinician_id` is the actor
+  - .claude/rules/local-llm-and-phi.md — encounter linkage to a patient is PHI; mask in logs
+  - backend/app/domain/entities.py — `Encounter`, `AuditAction.ENCOUNTER_CREATE`
+  - backend/app/infrastructure/db/repositories.py — repository implementations
+  - backend/app/usecases/di.py — existing DI seam to extend
+  - backend/app/usecases/errors.py — `MRNConflict` precedent; add new typed exceptions here
+  - backend/app/interfaces/routers/patients.py — pattern to follow
+  - backend/app/interfaces/exception_handlers.py — global `{code, message}` envelope
+- **Acceptance:**
+  - [ ] New module `app/usecases/encounter.py` exports `create_encounter`, `find_encounter_by_id`, `list_encounters_by_patient`.
+  - [ ] `create_encounter` raises `PatientNotFound` when patient does not exist; writes one AuditLog with `action=AuditAction.ENCOUNTER_CREATE`, `meta_json="{}"`, no PHI; patient and encounter INSERT in same transaction.
+  - [ ] `app/usecases/di.py` extended with `make_create_encounter`, `make_find_encounter_by_id`, `make_list_encounters_by_patient`.
+  - [ ] `app/interfaces/routers/encounters.py` exposes POST `/encounters` (201), GET `/encounters/{encounter_id}` (200/404), GET `/patients/{patient_id}/encounters` (200/404).
+  - [ ] Router imports ONLY from `app.usecases.*` and `app.interfaces.*`. `grep -nE '^from app\.infrastructure' encounters.py` → 0 hits.
+  - [ ] `EncounterCreate` has `model_config = ConfigDict(extra='forbid')`.
+  - [ ] PHI: no PHI in log lines; audit `meta_json="{}"` (no patient_id); error messages do not echo UUIDs.
+  - [ ] Unit tests in `tests/usecases/test_encounter.py` and `tests/interfaces/test_encounters_router.py`.
+  - [ ] Mounted in `main.py` via `app.include_router(encounters_router, prefix="")`.
+- **Out-of-scope:** Encounter update/delete, pagination, search by date range, clinician existence validation, record draft/final endpoints.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; encounter linkage to a patient is PHI per `.claude/rules/local-llm-and-phi.md` §3. Mask before logger; never echo any UUID in error envelopes; audit `meta_json` stays `"{}"`.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** usecases (extend), interfaces (new router)
+- **Status:** qa
