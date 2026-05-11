@@ -15,6 +15,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    DateTime,
     Enum,
     ForeignKey,
     Text,
@@ -45,8 +46,9 @@ class PatientORM(Base):
     mrn: Mapped[str] = mapped_column(info={"phi": True})
     family_name: Mapped[str] = mapped_column(info={"phi": True})
     given_name: Mapped[str] = mapped_column(info={"phi": True})
-    date_of_birth: Mapped[datetime] = mapped_column(info={"phi": True})
-    created_at: Mapped[datetime] = mapped_column()
+    # INF-002 選択肢 A: 最小変更方針でタイムゾーン付き datetime を維持する。
+    date_of_birth: Mapped[datetime] = mapped_column(DateTime(timezone=True), info={"phi": True})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class EncounterORM(Base):
@@ -56,9 +58,9 @@ class EncounterORM(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     patient_id: Mapped[UUID] = mapped_column(ForeignKey("patient.id"), index=True)
-    encountered_at: Mapped[datetime] = mapped_column()
+    encountered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     clinician_id: Mapped[UUID] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class RecordDraftORM(Base):
@@ -70,8 +72,8 @@ class RecordDraftORM(Base):
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounter.id"), index=True)
     content: Mapped[str] = mapped_column(Text, info={"phi": True})
     confidence: Mapped[float | None] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column()
-    updated_at: Mapped[datetime] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class RecordFinalORM(Base):
@@ -92,7 +94,7 @@ class RecordFinalORM(Base):
     predecessor_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("record_final.id"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class AuditLogORM(Base):
@@ -101,9 +103,18 @@ class AuditLogORM(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    at: Mapped[datetime] = mapped_column(index=True)
+    # at: FE-003 で 500 を引き起こした TZ なし TIMESTAMP を TIMESTAMPTZ に修正 (INF-002)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     actor: Mapped[UUID] = mapped_column()
-    action: Mapped[AuditActionORM] = mapped_column(Enum(AuditActionORM, name="audit_action"))
+    # values_callable: Enum 名 (PATIENT_CREATE) ではなく値 (patient_create) を使う。
+    # デフォルト動作は名前を使うため Postgres audit_action 型と不一致になる。
+    action: Mapped[AuditActionORM] = mapped_column(
+        Enum(
+            AuditActionORM,
+            name="audit_action",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
+    )
     target_kind: Mapped[str] = mapped_column()
     target_id: Mapped[UUID] = mapped_column()
     meta_json: Mapped[str] = mapped_column(Text, default="{}")

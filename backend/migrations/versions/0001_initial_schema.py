@@ -13,6 +13,11 @@ Reviewer note: all five tables are created in this revision.
 record_final is immutable by application convention (no UPDATE path).
 audit_log is append-only by application convention (no UPDATE path).
 No PHI test data is included in this migration.
+
+PoC scope: schema not yet deployed anywhere; updating initial migration in place
+rather than chaining ALTER migrations. All timestamp columns use TIMESTAMPTZ
+(TIMESTAMP with timezone=True) so SQLAlchemy tz-aware UTC datetimes persist
+correctly to Postgres — plain TIMESTAMP caused a 500 in FE-003 (INF-002 fix).
 """
 
 from __future__ import annotations
@@ -37,8 +42,8 @@ def upgrade() -> None:
         sa.Column("mrn", sa.String(), nullable=False),  # PHI
         sa.Column("family_name", sa.String(), nullable=False),  # PHI
         sa.Column("given_name", sa.String(), nullable=False),  # PHI
-        sa.Column("date_of_birth", sa.DateTime(), nullable=False),  # PHI
-        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("date_of_birth", sa.TIMESTAMP(timezone=True), nullable=False),  # PHI
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_patient_mrn", "patient", ["mrn"])
@@ -50,9 +55,9 @@ def upgrade() -> None:
         "encounter",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("patient_id", sa.Uuid(), nullable=False),
-        sa.Column("encountered_at", sa.DateTime(), nullable=False),
+        sa.Column("encountered_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("clinician_id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["patient_id"], ["patient.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -67,8 +72,8 @@ def upgrade() -> None:
         sa.Column("encounter_id", sa.Uuid(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),  # PHI
         sa.Column("confidence", sa.Float(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["encounter_id"], ["encounter.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -86,7 +91,7 @@ def upgrade() -> None:
         sa.Column("confidence", sa.Float(), nullable=True),
         sa.Column("clinician_id", sa.Uuid(), nullable=False),
         sa.Column("predecessor_id", sa.Uuid(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["encounter_id"], ["encounter.id"]),
         sa.ForeignKeyConstraint(["predecessor_id"], ["record_final.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -99,7 +104,7 @@ def upgrade() -> None:
     op.create_table(
         "audit_log",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("at", sa.DateTime(), nullable=False),
+        sa.Column("at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("actor", sa.Uuid(), nullable=False),
         sa.Column(
             "action",

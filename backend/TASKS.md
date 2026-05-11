@@ -11,16 +11,17 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                   | Status | Gates Touched              | Owner     |
-| ------- | ----------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology        | done   | G0                         | Generator |
-| BE-001  | Inference Adapter       | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                   | Status      | Gates Touched              | Owner     |
+| ------- | ----------------------- | ----------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology        | done        | G0                         | Generator |
+| BE-001  | Inference Adapter       | done        | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes   | in-progress | G0, G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -280,3 +281,34 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** usecases (extend), interfaces (new router + extend exception_handlers)
 - **Status:** done
+
+---
+
+## Integration gap fixes (INF-002)
+
+- **Goal:** Fix three pre-existing backend integration gaps that blocked every browser-driven E2E test: (a) Alembic env.py now uses async engine so `alembic upgrade head` works with `postgresql+asyncpg://`; (b) all timestamp columns are TIMESTAMPTZ so tz-aware UTC datetimes persist correctly; (c) FastAPI CORS middleware allows the browser at `http://localhost:3000` to call the API on `http://localhost:8000`. Add integration test for the timezone round-trip and unit tests for CORS preflight.
+- **Inputs:**
+  - backend/SPEC.md#persistence — migrations and DB schema
+  - backend/SPEC.md#api-surface — CORS as part of API surface
+  - CLAUDE.md §2 Scope — local PoC, `allow_origins=["http://localhost:3000"]`
+  - .claude/rules/local-llm-and-phi.md §1 — CORS must NOT broaden to `*`
+  - backend/migrations/env.py — sync engine_from_config (broken for asyncpg)
+  - backend/migrations/versions/0001_initial_schema.py — TIMESTAMP without timezone
+  - backend/app/infrastructure/db/models.py — Mapped[datetime] without timezone=True
+  - backend/main.py — no CORS middleware
+- **Acceptance:**
+  - [ ] backend/migrations/env.py uses async_engine_from_config + run_sync(do_run_migrations)
+  - [ ] `docker compose exec backend alembic upgrade head` succeeds on fresh postgres
+  - [ ] 0001_initial_schema.py uses TIMESTAMP(timezone=True) for all timestamp columns
+  - [ ] backend/app/infrastructure/db/models.py uses DateTime(timezone=True) for all timestamp columns
+  - [ ] backend/main.py has CORSMiddleware registered before routers; allow_origins=["http://localhost:3000"] only
+  - [ ] tests/integration/test_postgres_writes.py: round-trip asserts tzinfo is not None on audit_log.at
+  - [ ] tests/interfaces/test_cors.py: allowed origin preflight → 200 with correct header; disallowed origin → no ACAO header matching evil origin; simple GET with allowed origin → ACAO header present
+  - [ ] G1 pyright 0 errors; G2 ruff clean; G3 pytest -q all pass (CORS unit tests included, integration test deselected)
+- **Out-of-scope:** BE-008 correction chain, auth, rate limiting, CSP headers, psycopg2-binary dependency
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; schema change touches PHI columns but no new PHI exposure; CORS does not bypass masking
+- **Gates Touched:** G0, G1, G2, G3, G4, G6, G7
+- **Affected Layers:** infrastructure (db models + migrations + alembic env), interfaces (CORS middleware in main.py)
+- **Status:** in-progress

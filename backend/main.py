@@ -5,6 +5,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -29,6 +30,21 @@ app = FastAPI(
     # 対話 UI (/docs, /redoc) は常時非公開 (CLAUDE.md §2 / backend/SPEC.md#api-surface)
     docs_url=None,
     redoc_url=None,
+)
+
+# ---------------------------------------------------------------------------
+# CORS ミドルウェア — ルーター登録より前に追加する必要がある
+# CLAUDE.md §2 Scope: ローカル PoC; ブラウザ (localhost:3000) → API (localhost:8000)
+# allow_origins は localhost:3000 のみ。* や公開オリジンは PHI ルール違反。
+# allow_credentials=False: PHI ルール §4 デフォルト拒否。
+# ---------------------------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
+    allow_credentials=False,
+    max_age=600,
 )
 
 # ---------------------------------------------------------------------------

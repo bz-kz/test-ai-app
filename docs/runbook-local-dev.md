@@ -31,15 +31,30 @@ docker compose build
 # 2. Start everything detached.
 docker compose up -d
 
-# 3. Pull the Gemma model into the llm container (one-time).
+# 3. Apply database migrations (required on first boot and after schema changes).
+#    Wait until postgres is healthy before running this step.
+docker compose exec backend alembic upgrade head
+
+# 4. Pull the Gemma model into the llm container (one-time).
 #    Single supported model — no tier ladder.
 docker compose exec llm ollama pull gemma4:e4b
 
-# 4. Confirm health.
+# 5. Confirm health.
 docker compose ps --status running
 ```
 
 Expected: 4 services in `running (healthy)` state. If any service is `restarting`, jump to **Troubleshooting**.
+
+### Schema reset (destructive)
+
+If the database schema needs to be reset during development (e.g. after changing migrations):
+
+```bash
+# WARNING: destroys all data in the postgres volume.
+docker compose down -v
+docker compose up -d
+docker compose exec backend alembic upgrade head
+```
 
 ## Health checks
 
