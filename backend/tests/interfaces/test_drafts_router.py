@@ -47,6 +47,7 @@ from app.infrastructure.db.repositories import (
 )
 from app.infrastructure.llm.errors import InferenceError
 from app.infrastructure.llm.fake_client import FakeLocalLLMClient
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.exception_handlers import (
     http_exception_handler,
     inference_error_handler,
@@ -79,6 +80,7 @@ from app.usecases.encounter import (
 )
 from app.usecases.final import finalize_draft_to_record_final, find_final_by_id
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+from tests.conftest import TEST_CLINICIAN_ID
 
 # ---------------------------------------------------------------------------
 # テスト用アプリとインメモリ DB のセットアップ
@@ -95,10 +97,11 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
         draft_repo = RecordDraftRepository(session)
         audit_repo = AuditLogRepository(session)
 
-        async def _generate(clinical_input, encounter_id):  # type: ignore[no-untyped-def]
+        async def _generate(clinical_input, encounter_id, clinician_id):  # type: ignore[no-untyped-def]
             draft = await generate_record_draft(
                 clinical_input=clinical_input,
                 encounter_id=encounter_id,
+                clinician_id=clinician_id,
                 llm=llm,
                 encounter_repo=encounter_repo,
                 draft_repo=draft_repo,
@@ -209,12 +212,13 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
         patient_repo = PatientRepository(session)
         audit_repo = AuditLogRepository(session)
 
-        async def _create(mrn, family_name, given_name, date_of_birth):  # type: ignore[no-untyped-def]
+        async def _create(mrn, family_name, given_name, date_of_birth, clinician_id):  # type: ignore[no-untyped-def]
             patient = await create_patient(
                 mrn=mrn,
                 family_name=family_name,
                 given_name=given_name,
                 date_of_birth=date_of_birth,
+                clinician_id=clinician_id,
                 patient_repo=patient_repo,
                 audit_repo=audit_repo,
             )
@@ -271,6 +275,8 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
     test_app.dependency_overrides[make_find_patient_by_mrn] = _override_make_find_patient_by_mrn
     # get_llm_client は make_generate_record_draft の内部でのみ使われるが念のため override する
     test_app.dependency_overrides[get_llm_client] = lambda: llm
+    # BE-012: テスト用固定臨床医 UUID を返すように auth 依存を上書きする
+    test_app.dependency_overrides[get_current_clinician] = lambda: TEST_CLINICIAN_ID
 
     return test_app
 
@@ -336,7 +342,6 @@ def _create_encounter(client: TestClient, patient_id: str) -> httpx.Response:
         json={
             "patient_id": patient_id,
             "encountered_at": "2024-06-01T10:00:00Z",
-            "clinician_id": str(uuid4()),
         },
     )
 
@@ -568,10 +573,9 @@ class TestPatchDraft:
             json={"clinical_input": "初期入力"},
         ).json()["id"]
 
-        clinician_id = str(uuid4())
         resp = client.patch(
             f"/drafts/{draft_id}",
-            json={"content": "編集後の内容", "clinician_id": clinician_id},
+            json={"content": "編集後の内容"},
         )
 
         assert resp.status_code == 200
@@ -590,7 +594,7 @@ class TestPatchDraft:
 
         resp = client.patch(
             f"/drafts/{draft_id}",
-            json={"content": "編集後の内容2", "clinician_id": str(uuid4())},
+            json={"content": "編集後の内容2"},
         )
 
         assert resp.status_code == 200
@@ -605,7 +609,7 @@ class TestPatchDraft:
         """PATCH /drafts/{id} が存在しない ID で 404 を返す。"""
         resp = client.patch(
             f"/drafts/{uuid4()}",
-            json={"content": "内容", "clinician_id": str(uuid4())},
+            json={"content": "内容"},
         )
 
         assert resp.status_code == 404
@@ -617,7 +621,7 @@ class TestPatchDraft:
         missing_id = str(uuid4())
         resp = client.patch(
             f"/drafts/{missing_id}",
-            json={"content": "内容", "clinician_id": str(uuid4())},
+            json={"content": "内容"},
         )
 
         assert resp.status_code == 404
@@ -639,14 +643,14 @@ class TestPatchDraft:
 
         resp = client.patch(
             f"/drafts/{draft_id}",
-            json={"content": "", "clinician_id": str(uuid4())},
+            json={"content": ""},
         )
 
         assert resp.status_code == 422
         assert resp.json()["code"] == "validation_error"
 
-    def test_422_on_extra_field(self, client: TestClient) -> None:
-        """extra='forbid' により余分フィールドで 422 を返す。"""
+    def test_422_on_clinician_id_in_body(self, client: TestClient) -> None:
+        """clinician_id をボディに含めると 422 を返す (extra='forbid')。BE-012 回帰テスト。"""
         patient_id = _create_patient(client, mrn="MRN-DRAFT-P-004").json()["id"]
         encounter_id = _create_encounter(client, patient_id).json()["id"]
         draft_id = client.post(
@@ -656,7 +660,23 @@ class TestPatchDraft:
 
         resp = client.patch(
             f"/drafts/{draft_id}",
-            json={"content": "内容", "clinician_id": str(uuid4()), "unexpected": "x"},
+            json={"content": "内容", "clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 422
+
+    def test_422_on_extra_field(self, client: TestClient) -> None:
+        """extra='forbid' により余分フィールドで 422 を返す。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFT-P-005").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "初期入力5"},
+        ).json()["id"]
+
+        resp = client.patch(
+            f"/drafts/{draft_id}",
+            json={"content": "内容", "unexpected": "x"},
         )
 
         assert resp.status_code == 422
@@ -670,6 +690,8 @@ class TestPatchDraft:
 class TestFinalizeDraft:
     def test_201_on_finalize(self, client: TestClient) -> None:
         """POST /drafts/{id}/finalize が 201 と FinalRead を返す。"""
+        from tests.conftest import TEST_CLINICIAN_ID_STR
+
         patient_id = _create_patient(client, mrn="MRN-FINAL-R-001").json()["id"]
         encounter_id = _create_encounter(client, patient_id).json()["id"]
         draft_id = client.post(
@@ -677,16 +699,16 @@ class TestFinalizeDraft:
             json={"clinical_input": "確定テスト入力"},
         ).json()["id"]
 
-        clinician_id = str(uuid4())
         resp = client.post(
             f"/drafts/{draft_id}/finalize",
-            json={"clinician_id": clinician_id},
+            json={},
         )
 
         assert resp.status_code == 201
         body = resp.json()
         assert body["encounter_id"] == encounter_id
-        assert body["clinician_id"] == clinician_id
+        # clinician_id はヘッダーから注入される (テスト用固定 UUID)
+        assert body["clinician_id"] == TEST_CLINICIAN_ID_STR
         assert body["predecessor_id"] is None
         assert "id" in body
         assert "content" in body
@@ -703,7 +725,7 @@ class TestFinalizeDraft:
 
         resp = client.post(
             f"/drafts/{draft_id}/finalize",
-            json={"clinician_id": str(uuid4())},
+            json={},
         )
 
         assert resp.status_code == 201
@@ -718,6 +740,24 @@ class TestFinalizeDraft:
         }
         assert set(resp.json().keys()) == expected
 
+    def test_422_on_clinician_id_in_body(self, client: TestClient) -> None:
+        """clinician_id をボディに含めると 422 を返す (extra='forbid')。BE-012 回帰テスト。"""
+        patient_id = _create_patient(client, mrn="MRN-FINAL-R-022").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+        draft_id = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "確定テスト入力022"},
+        ).json()["id"]
+
+        resp = client.post(
+            f"/drafts/{draft_id}/finalize",
+            json={"clinician_id": str(uuid4())},
+        )
+
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["code"] == "validation_error"
+
     # -------------------------------------------------------------------------
     # (l) POST finalize 2 回目 → 409
     # -------------------------------------------------------------------------
@@ -731,12 +771,12 @@ class TestFinalizeDraft:
             json={"clinical_input": "二重確定テスト"},
         ).json()["id"]
 
-        client.post(f"/drafts/{draft_id}/finalize", json={"clinician_id": str(uuid4())})
+        client.post(f"/drafts/{draft_id}/finalize", json={})
 
         # 2 回目の確定
         resp2 = client.post(
             f"/drafts/{draft_id}/finalize",
-            json={"clinician_id": str(uuid4())},
+            json={},
         )
 
         assert resp2.status_code == 409
@@ -752,10 +792,10 @@ class TestFinalizeDraft:
             json={"clinical_input": "SENSITIVE_PHI_409_TEST"},
         ).json()["id"]
 
-        client.post(f"/drafts/{draft_id}/finalize", json={"clinician_id": str(uuid4())})
+        client.post(f"/drafts/{draft_id}/finalize", json={})
         resp2 = client.post(
             f"/drafts/{draft_id}/finalize",
-            json={"clinician_id": str(uuid4())},
+            json={},
         )
 
         assert resp2.status_code == 409
@@ -773,7 +813,7 @@ class TestFinalizeDraft:
         """存在しない draft_id で 404 を返す。"""
         resp = client.post(
             f"/drafts/{uuid4()}/finalize",
-            json={"clinician_id": str(uuid4())},
+            json={},
         )
 
         assert resp.status_code == 404

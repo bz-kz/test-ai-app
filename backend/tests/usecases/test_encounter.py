@@ -57,6 +57,7 @@ async def _insert_patient(session: AsyncSession) -> Patient:
         family_name="山田",
         given_name="太郎",
         date_of_birth=date(1985, 4, 10),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )

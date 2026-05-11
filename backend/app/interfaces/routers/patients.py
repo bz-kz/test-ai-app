@@ -22,6 +22,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
     CreatePatientCallable,
@@ -73,6 +74,7 @@ class PatientRead(BaseModel):
     response_model=PatientRead,
     status_code=201,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         409: {"model": ErrorResponse, "description": "MRN が既存患者と重複する"},
         422: {"model": ErrorResponse, "description": "リクエストのバリデーションエラー"},
     },
@@ -80,6 +82,7 @@ class PatientRead(BaseModel):
 )
 async def post_patient(
     body: PatientCreate,
+    clinician_id: UUID = Depends(get_current_clinician),
     create: CreatePatientCallable = Depends(make_create_patient),
 ) -> PatientRead:
     """新規患者を作成し、監査ログを記録する (create_patient ユースケース)。
@@ -93,6 +96,7 @@ async def post_patient(
             body.family_name,
             body.given_name,
             body.date_of_birth,
+            clinician_id,
         )
     except MRNConflict:
         raise HTTPException(
@@ -118,12 +122,14 @@ async def post_patient(
     "/patients/{patient_id}",
     response_model=PatientRead,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "患者が見つからない"},
     },
     summary="患者取得 (ID)",
 )
 async def get_patient_by_id(
     patient_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     find: FindPatientByIdCallable = Depends(make_find_patient_by_id),
 ) -> PatientRead:
     """UUID で患者を取得する (find_patient_by_id ユースケース)。
@@ -151,12 +157,14 @@ async def get_patient_by_id(
     "/patients",
     response_model=PatientRead,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "患者が見つからない"},
     },
     summary="患者取得 (MRN)",
 )
 async def get_patient_by_mrn(
     mrn: str = Query(..., min_length=1, description="診察番号 (PHI)"),
+    _clinician_id: UUID = Depends(get_current_clinician),
     find: FindPatientByMrnCallable = Depends(make_find_patient_by_mrn),
 ) -> PatientRead:
     """MRN で患者を取得する (find_patient_by_mrn ユースケース)。

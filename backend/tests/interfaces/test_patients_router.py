@@ -35,6 +35,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.infrastructure.db.engine import Base
 from app.infrastructure.db.repositories import AuditLogRepository, PatientRepository
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
@@ -47,6 +48,7 @@ from app.usecases.di import (
     make_find_patient_by_mrn,
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+from tests.conftest import TEST_CLINICIAN_ID
 
 # ---------------------------------------------------------------------------
 # テスト用アプリとインメモリ DB のセットアップ
@@ -67,12 +69,14 @@ def _make_test_app(session: AsyncSession) -> FastAPI:
             family_name: str,
             given_name: str,
             date_of_birth: date,
-        ):  # type: ignore[no-untyped-def]
+            clinician_id,  # type: ignore[no-untyped-def]
+        ):
             patient = await create_patient(
                 mrn=mrn,
                 family_name=family_name,
                 given_name=given_name,
                 date_of_birth=date_of_birth,
+                clinician_id=clinician_id,
                 patient_repo=patient_repo,
                 audit_repo=audit_repo,
             )
@@ -114,6 +118,8 @@ def _make_test_app(session: AsyncSession) -> FastAPI:
     test_app.dependency_overrides[make_create_patient] = _override_make_create_patient
     test_app.dependency_overrides[make_find_patient_by_id] = _override_make_find_patient_by_id
     test_app.dependency_overrides[make_find_patient_by_mrn] = _override_make_find_patient_by_mrn
+    # BE-012: テスト用固定臨床医 UUID を返すように auth 依存を上書きする
+    test_app.dependency_overrides[get_current_clinician] = lambda: TEST_CLINICIAN_ID
     return test_app
 
 

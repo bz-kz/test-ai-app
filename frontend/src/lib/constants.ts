@@ -9,3 +9,9 @@ export const LATENCY_CANCEL_MS = 10000;
 
 /** API ベース URL — 環境変数から読み取る */
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+/**
+ * PoC 用固定 clinician ID — 本番では認証フローに置き換える。
+ * PHI のため localStorage には保存しない。メモリ内定数として保持する。
+ */
+export const CLINICIAN_ID = "00000000-0000-0000-0000-0000000a11ce";

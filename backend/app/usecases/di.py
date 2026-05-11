@@ -83,7 +83,7 @@ async def _get_db_session() -> AsyncGenerator[AsyncSession, None]:
 # ---------------------------------------------------------------------------
 
 CreatePatientCallable = Callable[
-    [str, str, str, date],
+    [str, str, str, date, UUID],
     Coroutine[Any, Any, Patient],
 ]
 
@@ -116,12 +116,14 @@ def make_create_patient(
         family_name: str,
         given_name: str,
         date_of_birth: date,
+        clinician_id: UUID,
     ) -> Patient:
         patient = await create_patient(
             mrn=mrn,
             family_name=family_name,
             given_name=given_name,
             date_of_birth=date_of_birth,
+            clinician_id=clinician_id,
             patient_repo=patient_repo,
             audit_repo=audit_repo,
         )
@@ -250,7 +252,7 @@ def make_list_encounters_by_patient(
 # ---------------------------------------------------------------------------
 
 GenerateRecordDraftCallable = Callable[
-    [str, UUID],
+    [str, UUID, UUID],
     Coroutine[Any, Any, RecordDraft],
 ]
 
@@ -278,10 +280,11 @@ def make_generate_record_draft(
     draft_repo = RecordDraftRepository(session)
     audit_repo = AuditLogRepository(session)
 
-    async def _generate(clinical_input: str, encounter_id: UUID) -> RecordDraft:
+    async def _generate(clinical_input: str, encounter_id: UUID, clinician_id: UUID) -> RecordDraft:
         draft = await generate_record_draft(
             clinical_input=clinical_input,
             encounter_id=encounter_id,
+            clinician_id=clinician_id,
             llm=llm,
             encounter_repo=encounter_repo,
             draft_repo=draft_repo,

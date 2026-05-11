@@ -25,6 +25,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
@@ -79,26 +80,21 @@ class DraftEdit(BaseModel):
     """下書き編集リクエストボディ。
 
     content は PHI を含む臨床叙述。空文字列は不可。
-    clinician_id は認証機能未実装のためリクエストボディで受け取る。
-    将来の auth Block でヘッダー/セッションから注入する予定。
+    clinician_id は X-Clinician-Id ヘッダーから注入するためボディに含めない。
     """
 
     model_config = ConfigDict(extra="forbid")
 
     content: str = Field(..., min_length=1)
-    clinician_id: UUID
 
 
 class FinalizeRequest(BaseModel):
     """下書き確定リクエストボディ。
 
-    clinician_id は認証機能未実装のためリクエストボディで受け取る。
-    将来の auth Block でヘッダー/セッションから注入する予定。
+    clinician_id は X-Clinician-Id ヘッダーから注入するためボディに含めない。
     """
 
     model_config = ConfigDict(extra="forbid")
-
-    clinician_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +107,7 @@ class FinalizeRequest(BaseModel):
     response_model=DraftRead,
     status_code=201,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "受診が見つからない"},
         503: {"model": ErrorResponse, "description": "推論サービス一時利用不可"},
     },
@@ -119,6 +116,7 @@ class FinalizeRequest(BaseModel):
 async def post_draft(
     encounter_id: UUID,
     body: DraftCreate,
+    clinician_id: UUID = Depends(get_current_clinician),
     generate: GenerateRecordDraftCallable = Depends(make_generate_record_draft),
 ) -> DraftRead:
     """AI によるカルテ下書きを生成し、永続化して返す。
@@ -128,7 +126,7 @@ async def post_draft(
     UUID・臨床入力はエラーメッセージに含めない。
     """
     try:
-        draft = await generate(body.clinical_input, encounter_id)
+        draft = await generate(body.clinical_input, encounter_id, clinician_id)
     except EncounterNotFound:
         raise HTTPException(
             status_code=404,
@@ -153,12 +151,14 @@ async def post_draft(
     "/drafts/{draft_id}",
     response_model=DraftRead,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "下書きが見つからない"},
     },
     summary="カルテ下書き取得 (ID)",
 )
 async def get_draft_by_id(
     draft_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     find: FindDraftByIdCallable = Depends(make_find_draft_by_id),
 ) -> DraftRead:
     """UUID でカルテ下書きを取得する。
@@ -190,6 +190,7 @@ async def get_draft_by_id(
     "/drafts/{draft_id}",
     response_model=DraftRead,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "下書きが見つからない"},
     },
     summary="カルテ下書き編集",
@@ -197,6 +198,7 @@ async def get_draft_by_id(
 async def patch_draft(
     draft_id: UUID,
     body: DraftEdit,
+    clinician_id: UUID = Depends(get_current_clinician),
     edit: EditRecordDraftCallable = Depends(make_edit_record_draft),
 ) -> DraftRead:
     """臨床医によるカルテ下書きの本文編集。
@@ -205,7 +207,7 @@ async def patch_draft(
     UUID・content はエラーメッセージに含めない。
     """
     try:
-        draft = await edit(draft_id, body.content, body.clinician_id)
+        draft = await edit(draft_id, body.content, clinician_id)
     except DraftNotFound:
         raise HTTPException(
             status_code=404,
@@ -230,6 +232,7 @@ async def patch_draft(
     response_model=FinalRead,
     status_code=201,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "下書きが見つからない"},
         409: {"model": ErrorResponse, "description": "受診にすでに確定カルテが存在する"},
     },
@@ -238,6 +241,7 @@ async def patch_draft(
 async def post_finalize_draft(
     draft_id: UUID,
     body: FinalizeRequest,
+    clinician_id: UUID = Depends(get_current_clinician),
     finalize: FinalizeDraftCallable = Depends(make_finalize_draft_to_record_final),
 ) -> FinalRead:
     """下書きを確定カルテに昇格させる。
@@ -247,7 +251,7 @@ async def post_finalize_draft(
     レスポンスは finals ルーターの FinalRead 形式で返す。
     """
     try:
-        final = await finalize(draft_id, body.clinician_id)
+        final = await finalize(draft_id, clinician_id)
     except DraftNotFound:
         raise HTTPException(
             status_code=404,

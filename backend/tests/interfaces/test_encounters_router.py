@@ -51,6 +51,7 @@ from app.infrastructure.db.repositories import (
     RecordFinalRepository,
 )
 from app.infrastructure.llm.fake_client import FakeLocalLLMClient
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
@@ -97,6 +98,7 @@ from app.usecases.final import (
     list_finals_by_encounter,
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+from tests.conftest import TEST_CLINICIAN_ID
 
 # ---------------------------------------------------------------------------
 # テスト用アプリとインメモリ DB のセットアップ
@@ -162,12 +164,13 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient | None = None)
         patient_repo = PatientRepository(session)
         audit_repo = AuditLogRepository(session)
 
-        async def _create(mrn, family_name, given_name, date_of_birth):  # type: ignore[no-untyped-def]
+        async def _create(mrn, family_name, given_name, date_of_birth, clinician_id):  # type: ignore[no-untyped-def]
             patient = await create_patient(
                 mrn=mrn,
                 family_name=family_name,
                 given_name=given_name,
                 date_of_birth=date_of_birth,
+                clinician_id=clinician_id,
                 patient_repo=patient_repo,
                 audit_repo=audit_repo,
             )
@@ -200,10 +203,11 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient | None = None)
         draft_repo = RecordDraftRepository(session)
         audit_repo = AuditLogRepository(session)
 
-        async def _generate(clinical_input, encounter_id):  # type: ignore[no-untyped-def]
+        async def _generate(clinical_input, encounter_id, clinician_id):  # type: ignore[no-untyped-def]
             draft = await generate_record_draft(
                 clinical_input=clinical_input,
                 encounter_id=encounter_id,
+                clinician_id=clinician_id,
                 llm=_llm,
                 encounter_repo=encounter_repo,
                 draft_repo=draft_repo,
@@ -347,6 +351,8 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient | None = None)
         _override_make_list_drafts_by_encounter
     )
     test_app.dependency_overrides[get_llm_client] = lambda: _llm
+    # BE-012: テスト用固定臨床医 UUID を返すように auth 依存を上書きする
+    test_app.dependency_overrides[get_current_clinician] = lambda: TEST_CLINICIAN_ID
     return test_app
 
 
@@ -396,7 +402,6 @@ def _create_encounter(
         json={
             "patient_id": patient_id,
             "encountered_at": encountered_at,
-            "clinician_id": str(uuid4()),
         },
     )
 
@@ -464,8 +469,22 @@ class TestPostEncounter:
             json={
                 "patient_id": patient_id,
                 "encountered_at": "2024-01-15T09:00:00Z",
-                "clinician_id": str(uuid4()),
                 "unexpected_field": "value",
+            },
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["code"] == "validation_error"
+
+    def test_422_on_clinician_id_in_body(self, client: TestClient) -> None:
+        """clinician_id をボディに含めると 422 を返す (extra='forbid')。BE-012 回帰テスト。"""
+        patient_id = _create_patient(client).json()["id"]
+        resp = client.post(
+            "/encounters",
+            json={
+                "patient_id": patient_id,
+                "encountered_at": "2024-01-15T09:00:00Z",
+                "clinician_id": str(uuid4()),
             },
         )
         assert resp.status_code == 422
@@ -479,7 +498,6 @@ class TestPostEncounter:
             json={
                 "patient_id": str(uuid4()),
                 # encountered_at が欠落
-                "clinician_id": str(uuid4()),
             },
         )
         assert resp.status_code == 422
@@ -618,7 +636,7 @@ class TestGetFinalsByEncounter:
 
         finalize_resp = client.post(
             f"/drafts/{draft_id}/finalize",
-            json={"clinician_id": str(uuid4())},
+            json={},
         )
         assert finalize_resp.status_code == 201
         final_id = finalize_resp.json()["id"]

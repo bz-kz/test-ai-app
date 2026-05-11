@@ -8,7 +8,7 @@
  * 注: サーバーエラーコンテキストを構造化ログに送るヘルパーは
  * PHI レビュー完了まで導入しない (BE-010)。
  */
-import { API_BASE_URL } from "@/lib/constants";
+import { API_BASE_URL, CLINICIAN_ID } from "@/lib/constants";
 
 /** GET /foo?mrn=X の X はクエリ文字列に PHI が含まれうるため、ログには出さない */
 export type ApiResult<T> =
@@ -42,6 +42,8 @@ export async function apiFetch<T>(
       ...init,
       headers: {
         "Content-Type": "application/json",
+        // PoC 用固定 clinician ID — ブラウザストレージには保存しない
+        "X-Clinician-Id": CLINICIAN_ID,
         ...init?.headers,
       },
     });

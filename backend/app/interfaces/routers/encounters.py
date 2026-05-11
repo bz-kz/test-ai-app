@@ -25,6 +25,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.routers.drafts import DraftRead
 from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
@@ -53,13 +54,12 @@ router = APIRouter(tags=["encounters"])
 
 
 class EncounterCreate(BaseModel):
-    """受診作成リクエストボディ。"""
+    """受診作成リクエストボディ。clinician_id はヘッダーから注入するためボディに含めない。"""
 
     model_config = ConfigDict(extra="forbid")
 
     patient_id: UUID
     encountered_at: datetime
-    clinician_id: UUID
 
 
 class EncounterRead(BaseModel):
@@ -82,6 +82,7 @@ class EncounterRead(BaseModel):
     response_model=EncounterRead,
     status_code=201,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "患者が見つからない"},
         422: {"model": ErrorResponse, "description": "リクエストのバリデーションエラー"},
     },
@@ -89,6 +90,7 @@ class EncounterRead(BaseModel):
 )
 async def post_encounter(
     body: EncounterCreate,
+    clinician_id: UUID = Depends(get_current_clinician),
     create: CreateEncounterCallable = Depends(make_create_encounter),
 ) -> EncounterRead:
     """新規受診を作成し、監査ログを記録する (create_encounter ユースケース)。
@@ -99,7 +101,7 @@ async def post_encounter(
         encounter = await create(
             body.patient_id,
             body.encountered_at,
-            body.clinician_id,
+            clinician_id,
         )
     except PatientNotFound:
         raise HTTPException(
@@ -123,12 +125,14 @@ async def post_encounter(
     "/encounters/{encounter_id}",
     response_model=EncounterRead,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "受診が見つからない"},
     },
     summary="受診取得 (ID)",
 )
 async def get_encounter_by_id(
     encounter_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     find: FindEncounterByIdCallable = Depends(make_find_encounter_by_id),
 ) -> EncounterRead:
     """UUID で受診を取得する (find_encounter_by_id ユースケース)。
@@ -159,12 +163,14 @@ async def get_encounter_by_id(
     "/patients/{patient_id}/encounters",
     response_model=list[EncounterRead],
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "患者が見つからない"},
     },
     summary="患者の受診一覧",
 )
 async def get_encounters_by_patient(
     patient_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     list_enc: ListEncountersByPatientCallable = Depends(make_list_encounters_by_patient),
 ) -> list[EncounterRead]:
     """患者に紐づく受診を encountered_at 降順で返す (list_encounters_by_patient ユースケース)。
@@ -198,10 +204,14 @@ async def get_encounters_by_patient(
 @router.get(
     "/encounters/{encounter_id}/finals",
     response_model=list[FinalRead],
+    responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
+    },
     summary="受診の確定カルテ一覧",
 )
 async def get_finals_by_encounter(
     encounter_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     list_finals: ListFinalsByEncounterCallable = Depends(make_list_finals_by_encounter),
 ) -> list[FinalRead]:
     """受診 ID に紐づく全確定カルテを created_at 昇順で返す (BE-008)。
@@ -228,10 +238,14 @@ async def get_finals_by_encounter(
 @router.get(
     "/encounters/{encounter_id}/drafts",
     response_model=list[DraftRead],
+    responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
+    },
     summary="受診の下書き一覧",
 )
 async def get_drafts_by_encounter(
     encounter_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     list_drafts: ListDraftsByEncounterCallable = Depends(make_list_drafts_by_encounter),
 ) -> list[DraftRead]:
     """受診 ID に紐づく全下書きを created_at 降順で返す (BE-009)。

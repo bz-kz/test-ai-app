@@ -73,6 +73,7 @@ async def _insert_encounter(session: AsyncSession) -> Encounter:
         family_name="田中",
         given_name="花子",
         date_of_birth=date(1990, 6, 15),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -110,6 +111,7 @@ async def test_generate_record_draft_returns_entity(session: AsyncSession) -> No
     draft = await generate_record_draft(
         clinical_input="38℃の発熱が3日間続いている。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -148,6 +150,7 @@ async def test_generate_record_draft_writes_one_audit_log(session: AsyncSession)
     draft = await generate_record_draft(
         clinical_input="胸痛と息切れ。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -183,6 +186,7 @@ async def test_generate_record_draft_raises_encounter_not_found(session: AsyncSe
         await generate_record_draft(
             clinical_input="テスト入力",
             encounter_id=nonexistent_id,
+            clinician_id=uuid4(),
             llm=llm,
             encounter_repo=encounter_repo,
             draft_repo=draft_repo,
@@ -213,6 +217,7 @@ async def test_generate_record_draft_propagates_inference_error(session: AsyncSe
         await generate_record_draft(
             clinical_input="テスト入力",
             encounter_id=encounter.id,
+            clinician_id=uuid4(),
             llm=llm,
             encounter_repo=encounter_repo,
             draft_repo=draft_repo,
@@ -242,6 +247,7 @@ async def test_find_draft_by_id_hit(session: AsyncSession) -> None:
     draft = await generate_record_draft(
         clinical_input="頭痛と吐き気。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -280,6 +286,7 @@ async def test_generate_record_draft_timestamps_are_equal_and_utc(session: Async
     draft = await generate_record_draft(
         clinical_input="関節痛と倦怠感。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -309,6 +316,7 @@ async def test_edit_record_draft_returns_updated_entity(session: AsyncSession) -
     draft = await generate_record_draft(
         clinical_input="発熱。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -345,6 +353,7 @@ async def test_edit_record_draft_writes_one_draft_update_audit(session: AsyncSes
     draft = await generate_record_draft(
         clinical_input="頭痛。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -416,6 +425,7 @@ async def test_list_drafts_by_encounter_returns_ordered_desc(session: AsyncSessi
     draft_a = await generate_record_draft(
         clinical_input="1 件目の入力",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,
@@ -426,6 +436,7 @@ async def test_list_drafts_by_encounter_returns_ordered_desc(session: AsyncSessi
     draft_b = await generate_record_draft(
         clinical_input="2 件目の入力",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=encounter_repo,
         draft_repo=draft_repo,

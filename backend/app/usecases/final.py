@@ -28,10 +28,6 @@ from app.usecases.errors import DraftNotFound, EncounterAlreadyFinalized, FinalN
 
 logger = logging.getLogger(__name__)
 
-# 認証機能が未実装のため、プレースホルダーとして固定の臨床医 UUID を使用する。
-# 将来の auth Block で JWT/セッションから clinician_id を注入する予定。
-_PLACEHOLDER_CLINICIAN_ID = UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def finalize_draft_to_record_final(
     *,

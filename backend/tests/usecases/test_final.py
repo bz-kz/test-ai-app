@@ -72,6 +72,7 @@ async def _insert_encounter(session: AsyncSession) -> Encounter:
         family_name="山田",
         given_name="太郎",
         date_of_birth=date(1980, 1, 15),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -98,6 +99,7 @@ async def _insert_draft(session: AsyncSession, encounter: Encounter) -> None:
     await generate_record_draft(
         clinical_input="テスト臨床入力",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -123,6 +125,7 @@ async def test_finalize_draft_returns_record_final(session: AsyncSession) -> Non
     draft = await generate_record_draft(
         clinical_input="発熱と咳。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -165,6 +168,7 @@ async def test_finalize_draft_writes_final_create_audit(session: AsyncSession) -
     draft = await generate_record_draft(
         clinical_input="腹痛。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -203,6 +207,7 @@ async def test_finalize_draft_findable_by_encounter(session: AsyncSession) -> No
     draft = await generate_record_draft(
         clinical_input="倦怠感。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -270,6 +275,7 @@ async def test_finalize_draft_raises_encounter_already_finalized(session: AsyncS
     draft1 = await generate_record_draft(
         clinical_input="1 回目入力。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -290,6 +296,7 @@ async def test_finalize_draft_raises_encounter_already_finalized(session: AsyncS
     draft2 = await generate_record_draft(
         clinical_input="2 回目入力。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -332,6 +339,7 @@ async def test_find_final_by_id_hit(session: AsyncSession) -> None:
     draft = await generate_record_draft(
         clinical_input="皮膚炎。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -379,6 +387,7 @@ async def test_correct_record_final_happy_path(session: AsyncSession) -> None:
     draft = await generate_record_draft(
         clinical_input="訂正テスト入力。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -432,6 +441,7 @@ async def test_correct_record_final_writes_final_correct_audit(session: AsyncSes
     draft = await generate_record_draft(
         clinical_input="監査テスト入力。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -517,6 +527,7 @@ async def test_correct_record_final_chain_depth_2(session: AsyncSession) -> None
     draft = await generate_record_draft(
         clinical_input="連鎖テスト。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -577,6 +588,7 @@ async def test_list_finals_by_encounter_returns_ordered(session: AsyncSession) -
     draft = await generate_record_draft(
         clinical_input="一覧テスト入力。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,
@@ -645,6 +657,7 @@ async def test_find_chain_for_final_returns_ordered_chain(session: AsyncSession)
     draft = await generate_record_draft(
         clinical_input="チェーンテスト入力。",
         encounter_id=encounter.id,
+        clinician_id=uuid4(),
         llm=llm,
         encounter_repo=EncounterRepository(session),
         draft_repo=draft_repo,

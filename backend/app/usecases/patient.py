@@ -17,10 +17,6 @@ from app.usecases.errors import MRNConflict
 
 logger = logging.getLogger(__name__)
 
-# 認証機能が未実装のため、プレースホルダーとして固定の臨床医 UUID を使用する。
-# 将来の auth Block でリクエストコンテキストから取得する UUID に置き換えること。
-_PLACEHOLDER_CLINICIAN_ID = UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def create_patient(
     *,
@@ -28,6 +24,7 @@ async def create_patient(
     family_name: str,
     given_name: str,
     date_of_birth: date,
+    clinician_id: UUID,
     patient_repo: PatientRepository,
     audit_repo: AuditLogRepository,
 ) -> Patient:
@@ -59,7 +56,7 @@ async def create_patient(
     audit = AuditLog(
         id=uuid4(),
         at=now,
-        actor=_PLACEHOLDER_CLINICIAN_ID,
+        actor=clinician_id,
         action=AuditAction.PATIENT_CREATE,
         target_kind="patient",
         target_id=patient.id,

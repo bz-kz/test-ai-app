@@ -58,6 +58,7 @@ async def test_create_patient_returns_entity(session: AsyncSession) -> None:
         family_name="山田",
         given_name="太郎",
         date_of_birth=dob,
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -93,6 +94,7 @@ async def test_create_patient_writes_one_audit_log(session: AsyncSession) -> Non
         family_name="鈴木",
         given_name="花子",
         date_of_birth=date(1990, 6, 15),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -123,6 +125,7 @@ async def test_create_patient_raises_on_duplicate_mrn(session: AsyncSession) -> 
         family_name="佐藤",
         given_name="一郎",
         date_of_birth=date(1975, 3, 20),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -134,6 +137,7 @@ async def test_create_patient_raises_on_duplicate_mrn(session: AsyncSession) -> 
             family_name="別の",
             given_name="患者",
             date_of_birth=date(1980, 5, 15),
+            clinician_id=uuid4(),
             patient_repo=patient_repo,
             audit_repo=audit_repo,
         )
@@ -155,6 +159,7 @@ async def test_find_patient_by_id_returns_entity(session: AsyncSession) -> None:
         family_name="田中",
         given_name="美穂",
         date_of_birth=date(2000, 12, 5),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -196,6 +201,7 @@ async def test_find_patient_by_mrn_returns_entity(session: AsyncSession) -> None
         family_name="高橋",
         given_name="誠",
         date_of_birth=date(1965, 8, 8),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -237,6 +243,7 @@ async def test_create_patient_audit_same_transaction(session: AsyncSession) -> N
         family_name="伊藤",
         given_name="美咲",
         date_of_birth=date(1995, 7, 22),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )
@@ -266,6 +273,7 @@ async def test_create_patient_created_at_is_utc(session: AsyncSession) -> None:
         family_name="渡辺",
         given_name="健",
         date_of_birth=date(1980, 1, 1),
+        clinician_id=uuid4(),
         patient_repo=patient_repo,
         audit_repo=audit_repo,
     )

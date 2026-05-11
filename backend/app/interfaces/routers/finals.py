@@ -23,6 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
     CorrectRecordFinalCallable,
@@ -63,12 +64,14 @@ class FinalRead(BaseModel):
 
 
 class FinalCorrectRequest(BaseModel):
-    """確定カルテ訂正リクエストボディ (BE-008)。"""
+    """確定カルテ訂正リクエストボディ (BE-008)。
+
+    clinician_id はヘッダーから注入するためボディに含めない。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     content: str = Field(..., min_length=1)
-    clinician_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +83,14 @@ class FinalCorrectRequest(BaseModel):
     "/finals/{final_id}",
     response_model=FinalRead,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "確定カルテが見つからない"},
     },
     summary="確定カルテ取得 (ID)",
 )
 async def get_final_by_id(
     final_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     find: FindFinalByIdCallable = Depends(make_find_final_by_id),
 ) -> FinalRead:
     """UUID で確定カルテを取得する。
@@ -119,6 +124,7 @@ async def get_final_by_id(
     response_model=FinalRead,
     status_code=201,
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "訂正元確定カルテが見つからない"},
         422: {"model": ErrorResponse, "description": "リクエストのバリデーションエラー"},
     },
@@ -127,6 +133,7 @@ async def get_final_by_id(
 async def post_correct_final(
     final_id: UUID,
     body: FinalCorrectRequest,
+    clinician_id: UUID = Depends(get_current_clinician),
     correct: CorrectRecordFinalCallable = Depends(make_correct_record_final),
 ) -> FinalRead:
     """訂正元確定カルテ ID を指定して訂正版を作成する (BE-008)。
@@ -135,7 +142,7 @@ async def post_correct_final(
     UUID はエラーメッセージに含めない。
     """
     try:
-        new_final = await correct(final_id, body.content, body.clinician_id)
+        new_final = await correct(final_id, body.content, clinician_id)
     except FinalNotFound:
         raise HTTPException(
             status_code=404,
@@ -160,12 +167,14 @@ async def post_correct_final(
     "/finals/{final_id}/chain",
     response_model=list[FinalRead],
     responses={
+        401: {"model": ErrorResponse, "description": "X-Clinician-Id ヘッダーが欠落または不正"},
         404: {"model": ErrorResponse, "description": "確定カルテが見つからない"},
     },
     summary="確定カルテ predecessor チェーン取得",
 )
 async def get_final_chain(
     final_id: UUID,
+    _clinician_id: UUID = Depends(get_current_clinician),
     find_chain: FindChainForFinalCallable = Depends(make_find_chain_for_final),
 ) -> list[FinalRead]:
     """指定 ID の確定カルテを起点に predecessor チェーンを返す (BE-008)。

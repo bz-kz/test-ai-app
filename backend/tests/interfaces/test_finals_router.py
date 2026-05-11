@@ -37,6 +37,7 @@ from app.infrastructure.db.repositories import (
 )
 from app.infrastructure.llm.errors import InferenceError
 from app.infrastructure.llm.fake_client import FakeLocalLLMClient
+from app.interfaces.auth import get_current_clinician
 from app.interfaces.exception_handlers import (
     http_exception_handler,
     inference_error_handler,
@@ -78,6 +79,7 @@ from app.usecases.final import (
     list_finals_by_encounter,
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+from tests.conftest import TEST_CLINICIAN_ID
 
 # ---------------------------------------------------------------------------
 # テスト用アプリとインメモリ DB のセットアップ
@@ -93,10 +95,11 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
         draft_repo = RecordDraftRepository(session)
         audit_repo = AuditLogRepository(session)
 
-        async def _generate(clinical_input, encounter_id):  # type: ignore[no-untyped-def]
+        async def _generate(clinical_input, encounter_id, clinician_id):  # type: ignore[no-untyped-def]
             draft = await generate_record_draft(
                 clinical_input=clinical_input,
                 encounter_id=encounter_id,
+                clinician_id=clinician_id,
                 llm=llm,
                 encounter_repo=encounter_repo,
                 draft_repo=draft_repo,
@@ -241,12 +244,13 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
         patient_repo = PatientRepository(session)
         audit_repo = AuditLogRepository(session)
 
-        async def _create(mrn, family_name, given_name, date_of_birth):  # type: ignore[no-untyped-def]
+        async def _create(mrn, family_name, given_name, date_of_birth, clinician_id):  # type: ignore[no-untyped-def]
             patient = await create_patient(
                 mrn=mrn,
                 family_name=family_name,
                 given_name=given_name,
                 date_of_birth=date_of_birth,
+                clinician_id=clinician_id,
                 patient_repo=patient_repo,
                 audit_repo=audit_repo,
             )
@@ -305,6 +309,8 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient) -> FastAPI:
     test_app.dependency_overrides[make_find_patient_by_id] = _override_make_find_patient_by_id
     test_app.dependency_overrides[make_find_patient_by_mrn] = _override_make_find_patient_by_mrn
     test_app.dependency_overrides[get_llm_client] = lambda: llm
+    # BE-012: テスト用固定臨床医 UUID を返すように auth 依存を上書きする
+    test_app.dependency_overrides[get_current_clinician] = lambda: TEST_CLINICIAN_ID
 
     return test_app
 
@@ -358,7 +364,6 @@ def _create_encounter(client: TestClient, patient_id: str) -> str:
         json={
             "patient_id": patient_id,
             "encountered_at": "2024-08-01T10:00:00Z",
-            "clinician_id": str(uuid4()),
         },
     )
     return str(resp.json()["id"])
@@ -375,7 +380,7 @@ def _create_draft(client: TestClient, encounter_id: str) -> str:
 def _finalize_draft(client: TestClient, draft_id: str) -> str:
     resp = client.post(
         f"/drafts/{draft_id}/finalize",
-        json={"clinician_id": str(uuid4())},
+        json={},
     )
     return str(resp.json()["id"])
 
@@ -460,7 +465,7 @@ class TestPostCorrectFinal:
 
         resp = client.post(
             f"/finals/{original_id}/correct",
-            json={"content": "訂正後の内容。", "clinician_id": str(uuid4())},
+            json={"content": "訂正後の内容。"},
         )
 
         assert resp.status_code == 201
@@ -478,7 +483,7 @@ class TestPostCorrectFinal:
 
         resp = client.post(
             f"/finals/{original_id}/correct",
-            json={"content": "訂正後の内容。", "clinician_id": str(uuid4())},
+            json={"content": "訂正後の内容。"},
         )
 
         assert resp.status_code == 201
@@ -497,7 +502,7 @@ class TestPostCorrectFinal:
         """存在しない source_final_id で 404 code='final_not_found' を返す。"""
         resp = client.post(
             f"/finals/{uuid4()}/correct",
-            json={"content": "訂正内容。", "clinician_id": str(uuid4())},
+            json={"content": "訂正内容。"},
         )
 
         assert resp.status_code == 404
@@ -509,7 +514,7 @@ class TestPostCorrectFinal:
         missing_id = str(uuid4())
         resp = client.post(
             f"/finals/{missing_id}/correct",
-            json={"content": "訂正内容。", "clinician_id": str(uuid4())},
+            json={"content": "訂正内容。"},
         )
 
         assert resp.status_code == 404
@@ -525,7 +530,23 @@ class TestPostCorrectFinal:
 
         resp = client.post(
             f"/finals/{original_id}/correct",
-            json={"content": "", "clinician_id": str(uuid4())},
+            json={"content": ""},
+        )
+
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["code"] == "validation_error"
+
+    def test_422_on_clinician_id_in_body(self, client: TestClient) -> None:
+        """clinician_id をボディに含めると 422 を返す (extra='forbid')。BE-012 回帰テスト。"""
+        patient_id = _create_patient(client, "MRN-CORRECT-004A")
+        encounter_id = _create_encounter(client, patient_id)
+        draft_id = _create_draft(client, encounter_id)
+        original_id = _finalize_draft(client, draft_id)
+
+        resp = client.post(
+            f"/finals/{original_id}/correct",
+            json={"content": "訂正内容。", "clinician_id": str(uuid4())},
         )
 
         assert resp.status_code == 422
@@ -543,7 +564,6 @@ class TestPostCorrectFinal:
             f"/finals/{original_id}/correct",
             json={
                 "content": "訂正内容。",
-                "clinician_id": str(uuid4()),
                 "unexpected_field": "value",
             },
         )
@@ -581,7 +601,7 @@ class TestGetFinalChain:
         # v2 = v1 の訂正
         resp_v2 = client.post(
             f"/finals/{v1_id}/correct",
-            json={"content": "v2 訂正。", "clinician_id": str(uuid4())},
+            json={"content": "v2 訂正。"},
         )
         assert resp_v2.status_code == 201
         v2_id = resp_v2.json()["id"]

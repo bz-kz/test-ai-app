@@ -11,22 +11,23 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                           | Status | Gates Touched              | Owner     |
-| ------- | ------------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology                | done   | G0                         | Generator |
-| BE-001  | Inference Adapter               | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation         | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize         | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes           | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment     | done   | G5 (primary), G6, G0       | Planner   |
-| BE-009  | List drafts for encounter       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-010  | Security hardening bundle       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-011  | INFO-level UUID hardening sweep | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                           | Status      | Gates Touched              | Owner     |
+| ------- | ------------------------------- | ----------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology                | done        | G0                         | Generator |
+| BE-001  | Inference Adapter               | done        | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints               | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation         | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize         | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes           | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain   | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment     | done        | G5 (primary), G6, G0       | Planner   |
+| BE-009  | List drafts for encounter       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-010  | Security hardening bundle       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-011  | INFO-level UUID hardening sweep | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-012  | X-Clinician-Id header auth      | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -466,3 +467,39 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases only (INFO logging hardening)
 - **Status:** done
+
+---
+
+## X-Clinician-Id header auth (BE-012)
+
+- **Goal:** Introduce a lightweight header-trust auth dependency (`get_current_clinician`) that extracts a clinician UUID from the `X-Clinician-Id` request header, wires it into all PHI-returning endpoints, removes `clinician_id` from request bodies, removes `_PLACEHOLDER_CLINICIAN_ID` from usecases, and threads the real clinician UUID through the audit log chain. Frontend sends the header on every `apiFetch` call from a PoC constant.
+- **Inputs:**
+  - backend/SPEC.md#api-surface — 401 envelope, header-trust pattern
+  - backend/SPEC.md#layer-boundaries — DDD direction; auth in `interfaces/` only
+  - .claude/rules/local-llm-and-phi.md §3, §4 — PHI in logs/errors
+  - backend/app/interfaces/routers/{patients,encounters,drafts,finals}.py — all PHI-returning routers
+  - backend/app/usecases/{patient,draft,final}.py — placeholder removal
+  - backend/app/usecases/di.py — DI callable types
+  - frontend/src/lib/{api.ts,constants.ts} — header injection
+- **Acceptance:**
+  - [x] `app/interfaces/auth.py` exports `get_current_clinician` FastAPI dependency; returns `UUID`; raises 401 `{code: "unauthenticated", message: "Clinician identification required."}` on missing/malformed header
+  - [x] `get_current_clinician` does NOT import from `app.usecases` or `app.infrastructure`
+  - [x] All PHI-returning endpoints in `patients.py`, `encounters.py`, `drafts.py`, `finals.py` depend on `get_current_clinician`
+  - [x] `clinician_id` removed from `EncounterCreate`, `DraftEdit`, `FinalizeRequest`, `FinalCorrectRequest` request bodies; sending it returns 422
+  - [x] `_PLACEHOLDER_CLINICIAN_ID` removed from `patient.py`, `draft.py`, `final.py`
+  - [x] `create_patient` and `generate_record_draft` usecases accept `clinician_id: UUID` parameter; audit logs use the real clinician ID
+  - [x] DI callables `CreatePatientCallable` and `GenerateRecordDraftCallable` updated to include `clinician_id`
+  - [x] `tests/conftest.py` provides `TEST_CLINICIAN_ID` and `auth_headers` fixture
+  - [x] `tests/interfaces/test_auth.py` has ≥4 tests: missing header → 401, malformed → 401, valid → passes through, envelope shape correct
+  - [x] All existing router tests updated: `get_current_clinician` overridden; body payloads without `clinician_id`
+  - [x] All usecase unit tests updated: `clinician_id=uuid4()` passed directly
+  - [x] `frontend/src/lib/constants.ts` exports `CLINICIAN_ID = "00000000-0000-0000-0000-0000000a11ce"`
+  - [x] `frontend/src/lib/api.ts` `apiFetch` sends `X-Clinician-Id: CLINICIAN_ID` on every request; never written to storage
+  - [x] G1 pyright 0 errors, G2 ruff clean, G3 pytest all pass
+- **Out-of-scope:** Signature verification, JWT, session management, clinician existence check in DB, RBAC, frontend login UI.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; clinician UUID is an actor identifier; not echoed in error messages; not logged raw
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** interfaces (new auth.py, all 4 routers), usecases (patient.py, draft.py, final.py, di.py), frontend (api.ts, constants.ts)
+- **Status:** in-progress

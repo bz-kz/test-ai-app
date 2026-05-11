@@ -31,14 +31,12 @@ from app.usecases.prompts import build_draft_prompt
 
 logger = logging.getLogger(__name__)
 
-# 認証機能が未実装のため、プレースホルダーとして固定の臨床医 UUID を使用する。
-_PLACEHOLDER_CLINICIAN_ID = UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def generate_record_draft(
     *,
     clinical_input: str,
     encounter_id: UUID,
+    clinician_id: UUID,
     llm: LocalLLMClient,
     encounter_repo: EncounterRepository,
     draft_repo: RecordDraftRepository,
@@ -95,7 +93,7 @@ async def generate_record_draft(
     audit = AuditLog(
         id=uuid4(),
         at=now,
-        actor=_PLACEHOLDER_CLINICIAN_ID,
+        actor=clinician_id,
         action=AuditAction.DRAFT_CREATE,
         target_kind="record_draft",
         target_id=draft.id,
@@ -105,9 +103,10 @@ async def generate_record_draft(
 
     # PHI をログに書かない — short_id で再識別リスクを低減する
     logger.info(
-        "record_draft created: id=%s encounter_id=%s",
+        "record_draft created: id=%s encounter_id=%s clinician_id=%s",
         short_id(draft.id),
         short_id(encounter_id),
+        short_id(clinician_id),
     )
     return draft
 
