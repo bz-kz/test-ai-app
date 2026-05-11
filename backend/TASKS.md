@@ -25,7 +25,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | INF-003 | LLM memory budget alignment   | done   | G5 (primary), G6, G0       | Planner   |
 | BE-009  | List drafts for encounter     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-010  | Security hardening bundle     | qa     | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-010  | Security hardening bundle     | done   | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -435,4 +435,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI (defensive hardening of existing PHI surfaces — no new exposure introduced)
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** interfaces (exception_handlers), usecases (DEBUG log hardening), domain (short_id helper), frontend lib (api.ts)
-- **Status:** qa
+- **Status:** done
