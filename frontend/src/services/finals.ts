@@ -71,6 +71,41 @@ export async function correctRecordFinal(
   }
 }
 
+/** listFinalsByEncounter の戻り値型 */
+export type ListFinalsByEncounterResult =
+  | { kind: "found"; finals: RecordFinal[] }
+  | { kind: "error" };
+
+/**
+ * 受診に紐づく確定カルテ一覧を取得する (GET /encounters/{encounterId}/finals)。
+ *
+ * - 成功: `{ kind: "found", finals }` — 空配列のこともある (受診なし)
+ * - 404 は存在しない受診と同義のため空リストとして扱う (仕様: BE-008)
+ * - その他エラー: `{ kind: "error" }`
+ *
+ * @param encounterId 受診 UUID
+ * @param opts        AbortSignal など
+ */
+export async function listFinalsByEncounter(
+  encounterId: string,
+  opts?: { signal?: AbortSignal }
+): Promise<ListFinalsByEncounterResult> {
+  const path = `/encounters/${encodeURIComponent(encounterId)}/finals`;
+  const result = await apiFetch<RecordFinal[]>(path, { signal: opts?.signal });
+
+  switch (result.kind) {
+    case "ok":
+      return { kind: "found", finals: result.data };
+    case "not_found":
+      // 存在しない受診の場合は空リストとして扱う (BE-008 仕様)
+      return { kind: "found", finals: [] };
+    case "validation_error":
+    case "server_error":
+    case "network_error":
+      return { kind: "error" };
+  }
+}
+
 /**
  * 確定カルテの predecessor チェーンを取得する (GET /finals/{finalId}/chain)。
  *

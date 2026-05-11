@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { correctRecordFinal, getFinalChain } from "../finals";
+import { correctRecordFinal, getFinalChain, listFinalsByEncounter } from "../finals";
 
 // apiFetch をモック — 実際の fetch は呼び出さない
 vi.mock("@/lib/api", () => ({
@@ -34,6 +34,30 @@ const FAKE_CORRECTED_FINAL = {
   predecessor_id: FAKE_FINAL_ID,
   created_at: "2024-01-02T00:00:00Z",
 };
+
+describe("listFinalsByEncounter", () => {
+  beforeEach(() => {
+    mockApiFetch.mockReset();
+  });
+
+  it("成功時: kind=found と finals 配列を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [FAKE_FINAL] });
+    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "found", finals: [FAKE_FINAL] });
+  });
+
+  it("404: 空の finals リストを kind=found で返す (存在しない受診は空リスト扱い)", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "not_found" });
+    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "found", finals: [] });
+  });
+
+  it("server_error: kind=error を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
+    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
+    expect(result).toEqual({ kind: "error" });
+  });
+});
 
 describe("correctRecordFinal", () => {
   beforeEach(() => {

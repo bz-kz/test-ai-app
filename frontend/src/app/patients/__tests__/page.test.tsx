@@ -46,7 +46,7 @@ describe("PatientsPage", () => {
     expect(screen.getByRole("button", { name: "検索中" })).toHaveAttribute("aria-busy", "true");
   });
 
-  it("found 状態: 患者情報カードが表示される", () => {
+  it("found 状態: 患者情報カードが表示され患者詳細ページへのリンクを持つ", () => {
     mockUseMrnSearch.mockReturnValue({
       query: "MRN-TEST-001",
       setQuery: vi.fn(),
@@ -58,6 +58,9 @@ describe("PatientsPage", () => {
     expect(screen.getByText("山田 太郎")).toBeInTheDocument();
     expect(screen.getByText("MRN-TEST-001")).toBeInTheDocument();
     expect(screen.getByText("1990-01-01")).toBeInTheDocument();
+    // 患者カードが患者詳細ページへのリンクになっている
+    const patientLink = screen.getByRole("link");
+    expect(patientLink).toHaveAttribute("href", `/patients/${FAKE_PATIENT.id}`);
   });
 
   it("not_found 状態: 該当患者なしメッセージが表示される", () => {

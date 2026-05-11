@@ -8,6 +8,7 @@
  * - PHI は localStorage / sessionStorage / indexedDB / cookies に書き込まない。
  * - fetch は直接呼び出さない (フック → サービス層に委譲)。
  */
+import Link from "next/link";
 import { useMrnSearch } from "@/hooks/useMrnSearch";
 import MrnSearchField from "@/components/molecules/MrnSearchField";
 
@@ -35,7 +36,10 @@ export default function PatientsPage() {
         )}
 
         {status === "found" && result !== null && (
-          <div className="rounded-[8px] border border-slate/20 bg-surface p-6 shadow-sm">
+          <Link
+            href={`/patients/${result.id}`}
+            className="block rounded-[8px] border border-slate/20 bg-surface p-6 shadow-sm hover:border-navy hover:shadow-md"
+          >
             <dl className="space-y-2">
               <div className="flex gap-4">
                 <dt className="w-28 text-sm font-medium text-slate">氏名</dt>
@@ -52,7 +56,7 @@ export default function PatientsPage() {
                 <dd className="text-sm text-navy">{result.date_of_birth}</dd>
               </div>
             </dl>
-          </div>
+          </Link>
         )}
 
         {status === "not_found" && <p className="text-center text-slate">該当患者なし</p>}

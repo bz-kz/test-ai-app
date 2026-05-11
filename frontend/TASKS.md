@@ -11,15 +11,16 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID     | Title                                                | Status      | Gates Touched              | Owner     |
-| ------ | ---------------------------------------------------- | ----------- | -------------------------- | --------- |
-| FE-001 | Frontend foundation + Button atom                    | done        | G1, G2, G3, G6, G7         | Generator |
-| FE-002 | Patient Search by MRN                                | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003 | Record Draft generation UI                           | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004 | Draft edit and finalize UI                           | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005 | Final correction UI + FE-004 fixes                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006 | Auto-load draft + correction chain UI                | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007 | Navigation pages (Patient detail + Encounter detail) | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                                                    | Status | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | qa     | G0, G1, G2, G3, G4, G6, G7 | Generator |
 
 ---
 
@@ -225,6 +226,37 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; existing draft `content` and final chain `content` excerpts are rendered in the operational-read path per `.claude/rules/local-llm-and-phi.md` §4; no PHI in console/storage/URL.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** molecules (ChainList), hooks (useEncounterDrafts + useFinalChain), services (listDraftsByEncounter), app (page extension)
+
+---
+
+## Navigation pages — detail pages + helper (FE-007b)
+
+- **Goal:** Deliver patient detail page, encounter detail page, `useCreateEncounter` hook, `listFinalsByEncounter` in `finals.ts`, and the search-result link — completing the full navigation layer started in FE-007a.
+- **Inputs:**
+  - frontend/SPEC.md#layer-rules — pages use hooks; hooks use services; services own fetch
+  - frontend/SPEC.md#atomic-design-mapping — component placement
+  - DESIGN.md#colors, #cards, #lists — visual spec
+  - .claude/rules/local-llm-and-phi.md §3, §4 — PHI in patient/encounter/draft/final fields; no console/storage/URL
+  - frontend/src/hooks/usePatientDetail.ts — wired in FE-007a
+  - frontend/src/hooks/useEncounterDetail.ts — wired in FE-007a
+  - frontend/src/services/encounters.ts — createEncounter, listFinalsByEncounter
+- **Acceptance:**
+  - [x] `services/finals.ts` extended: `listFinalsByEncounter(encounterId, opts?)` added; 3 new unit tests in `finals.test.ts` (found, 404→empty, server_error).
+  - [x] `hooks/useCreateEncounter.ts`: idle → submitting → success → idle state machine; `reset()` clears `lastCreated`; AbortController; JP error strings; 8 unit tests.
+  - [x] `app/patients/[patientId]/page.tsx`: "use client"; 4 loading states (loading/idle → "読み込み中…", not_found, error, loaded); patient card with all fields; encounter list newest-first with `<Link href="/encounters/{id}">` per row; new-encounter inline form; success confirmation "✓ 受診を追加しました" for 2s; 11 page tests.
+  - [x] `app/encounters/[encounterId]/page.tsx`: "use client"; 4 loading states; encounter card (encountered_at, clinician_id as 8-hex-char short form, created_at); drafts list (first 80 chars + …); finals list (same shape); "下書きを作成 / 編集" Link to `/encounters/{id}/draft`; 9 page tests.
+  - [x] `app/patients/page.tsx` (FE-002): patient card wrapped in `<Link href="/patients/{id}">`.
+  - [x] G0 `docker compose build frontend && docker compose up -d frontend` — all services running.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — 285/285 tests pass.
+  - [x] G4 security-check — no hosted-LLM SDKs; no PHI in console/storage/URL; no dangerouslySetInnerHTML; no direct fetch in pages.
+- **Out-of-scope:** Patient creation/edit UI; encounter-to-patient back-link (patient_id not shown in URL); auth-gated PHI reads; pagination; SSR pre-fetch; MaskToggle on detail pages.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; family_name, given_name, MRN, DOB, draft/final content excerpts are displayed in operational-read path per `.claude/rules/local-llm-and-phi.md` §4; no PHI in console, storage, or URL.
+- **Gates Touched:** G0, G1, G2, G3, G4, G6, G7
+- **Affected Layers:** hooks (useCreateEncounter), services (finals extension), app (two new pages + patients search update)
 
 ---
 
