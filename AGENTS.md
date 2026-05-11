@@ -72,10 +72,61 @@ An agent escalates to Planner via the Spec Pivot Request shape when:
 
 ## 8. Commit & branching
 
+### 8.1 When and what to commit
+
 - One feature Block ≈ one commit. The commit subject names the Block ("Patient search by MRN" → `feat: patient search by MRN`).
 - Generator commits after self-eval is green and BEFORE invoking Evaluator. Evaluator commits a tag/marker on pass; on fail, the Generator's commit stays as the work-in-progress record.
-- Never amend a commit that has been handed to the Evaluator. Add a follow-up commit instead.
+- Never commit unless the user asked for a commit in the current turn (Generator's self-eval-green is the trigger for _its_ Block commits; for ad-hoc edits, wait for the user).
+
+### 8.2 Refusals (non-negotiable)
+
 - Never `git push` from any agent. The human pushes.
+- Never `--amend` a commit that has been handed to the Evaluator. Add a follow-up commit instead.
+- Never `--no-verify` / `--no-gpg-sign` or any hook bypass. If a hook fails, fix the underlying issue and create a new commit.
+- Never destructive ops (`reset --hard`, `clean -fd`, `branch -D`, `checkout -- <path>`, `restore <path>`, `push -f`, `rebase -i`) without an explicit user instruction in the current turn.
+- Never `git add -A` / `git add .`. Stage by explicit path so secrets and large binaries can't slip in.
+- Never edit human-only files via git tooling (see §3: `.claude/settings.json`, `.claude/agents/*.md`, `.claude/rules/*.md`).
+- Never `git log -uall` (memory-exhaustive on large repos).
+
+### 8.3 Commit message format
+
+- English, imperative, ≤72-char subject.
+- Conventional prefix: `feat:` `fix:` `refactor:` `test:` `docs:` `chore:`. Use a scope when it adds clarity: `feat(backend): ...`, `fix(frontend): ...`.
+- Body only when the _why_ is not obvious from the diff.
+- HEREDOC form with a single-quoted delimiter, ending in a `Co-Authored-By:` trailer (model name reflects who composed the commit — e.g. `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`):
+
+  ```bash
+  git commit -m "$(cat <<'EOF'
+  <subject>
+
+  <optional body>
+
+  Co-Authored-By: Claude <model> <noreply@anthropic.com>
+  EOF
+  )"
+  ```
+
+### 8.4 Pre-commit hygiene
+
+Before every `git commit`, run in parallel:
+
+1. `git status` — confirm the staged set matches stated intent.
+2. `git diff --cached` — confirm the staged content is what was described.
+3. `git log --oneline -n 5` — match the repo's existing subject style.
+
+Scan staged paths for `.env*`, `*.key`, `*.pem`, `credentials*`, anything under `secrets/`. Any match → STOP, surface to the user, do not commit even if the user said "commit everything".
+
+### 8.5 Hook-failure protocol
+
+If `git commit` fails due to a pre-commit hook:
+
+1. The commit did **not** happen — `--amend` would touch the _previous_ commit. Do not amend.
+2. Read the hook output, fix the underlying issue (lint / type / format / test).
+3. `git add -- <fixed paths>` and re-run the same HEREDOC commit as a **new** commit.
+
+### 8.6 Why these rules are inline (not in a Skill)
+
+Earlier the project had a `git-operations` Skill that codified the same rules; it was removed once the rules proved load-bearing enough to live in the cross-agent contract directly. Reintroducing a git-specific Skill requires an ADR — agents should not re-skillify what is already canonical here.
 
 ## 9. Things every agent should keep visible
 
