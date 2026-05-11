@@ -27,7 +27,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-009  | List drafts for encounter       | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-010  | Security hardening bundle       | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-011  | INFO-level UUID hardening sweep | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-012  | X-Clinician-Id header auth      | qa     | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-012  | X-Clinician-Id header auth      | done   | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -502,4 +502,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; clinician UUID is an actor identifier; not echoed in error messages; not logged raw
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** interfaces (new auth.py, all 4 routers), usecases (patient.py, draft.py, final.py, di.py), frontend (api.ts, constants.ts)
-- **Status:** qa
+- **Status:** done
