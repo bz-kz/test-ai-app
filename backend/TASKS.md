@@ -29,6 +29,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-011  | INFO-level UUID hardening sweep | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-012  | X-Clinician-Id header auth      | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-013  | Streaming draft endpoint        | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| INF-004 | ASR compose service             | qa     | G0, G4, G5, G6, G7         | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -542,3 +543,36 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** usecases (extend draft.py + di.py), interfaces (extend drafts router)
 - **Status:** done
+
+---
+
+## ASR Compose Service (INF-004)
+
+- **Goal:** Add an internal-only `asr` Docker Compose service running `whisper-server` from the `ghcr.io/ggml-org/whisper.cpp:main` image with the `medium-q5_0` GGML model, raise the Docker memory floor in the runbook, and prime ASR env-vars on the backend service. No Python/TS code lands in this Block.
+- **Inputs:**
+  - SPEC.md#asr-layer-contract — service endpoint, env var names
+  - SPEC.md#hardware-assumptions — Docker memory floor ≥13 GB
+  - docs/adr/0001-voice-input-and-local-asr.md — variant pick (medium-q5_0), image choice, port (8080), network boundary
+  - .claude/rules/local-llm-and-phi.md §1 §3 — no host ports for asr; audio = PHI
+  - docker-compose.yml — existing service shape to follow
+  - docs/runbook-local-dev.md — runbook to update
+- **Acceptance:**
+  - [ ] `docker-compose.yml` defines `asr` service using `ghcr.io/ggml-org/whisper.cpp:main` with `platform: linux/amd64` (image is amd64-only; Rosetta emulation on Apple Silicon).
+  - [ ] `asr` service joins `internal` network only; no `ports:` entry.
+  - [ ] `asr` service volume `asr_data:/models` persists GGML weights across container recreation.
+  - [ ] `asr` startup command: download `ggml-medium-q5_0.bin` into `/models` if absent, then exec `whisper-server` with `--host 0.0.0.0 --port 8080 -m /models/ggml-medium-q5_0.bin`.
+  - [ ] Healthcheck: TCP port-open check on 8080 (no full transcription); `start_period: 120s`.
+  - [ ] `backend` service gains env vars: `ASR_BASE_URL=http://asr:8080`, `ASR_MODEL=ggml-medium-q5_0.bin`, `ASR_TIMEOUT_S=90`.
+  - [ ] Top-level `volumes:` block adds `asr_data:` alongside `postgres_data` and `ollama_data`.
+  - [ ] `docs/runbook-local-dev.md` updated: Docker Desktop memory ≥12 GB → ≥13 GB; topology diagram adds `asr`; first-boot section notes ~0.7 GiB additional model pull.
+  - [ ] `backend/TASKS.md` INF-004 row status: `in-progress` → `qa` on Generator self-eval green.
+  - [ ] G0: `docker compose ps --status running` shows 5 services healthy.
+  - [ ] G4: `grep -E 'asr.*\bports:' docker-compose.yml` → 0 hits; `grep -E 'extra_hosts|host.docker.internal' docker-compose.yml` → 0 hits.
+  - [ ] G6/G7: `grep -RE 'http://asr[: ]|whisper' backend/app` → 0 hits (no backend code touches ASR yet).
+- **Out-of-scope:** `app/infrastructure/asr/` Python code (BE-014); `/encounters/{id}/transcribe` endpoint (BE-014); `RecordButton` atom / `VoiceCapture` molecule (FE-009); adding `asr` to `/health` (BE-014 scope).
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; whisper.cpp medium-q5_0; ASR_TIMEOUT_S=90; co-resident with gemma4:e4b; total Docker memory budget ≈13 GiB.
+- **Data Sensitivity:** PHI; audio = PHI per ADR-0001 + rule §3; no PHI flows in this Block (compose-only, no audio processed).
+- **Gates Touched:** G0, G4, G5, G6, G7
+- **Affected Layers:** infrastructure (compose only), docs/runbook
+- **Status:** qa

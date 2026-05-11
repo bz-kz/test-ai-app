@@ -6,13 +6,14 @@ Single-machine setup for the AI Medical Record Generator. Everything runs in Doc
 
 ```
 docker-compose.yml
-├── frontend      Next.js dev server         :3000
-├── backend       FastAPI (uvicorn)          :8000
-├── postgres      PostgreSQL                  :5432
-└── llm           Gemma 4 E4B inference server :11434  (Ollama-compatible API)
+├── frontend      Next.js dev server              :3000
+├── backend       FastAPI (uvicorn)               :8000
+├── postgres      PostgreSQL                       :5432  (internal-only)
+├── llm           Gemma 4 E4B (Ollama)            :11434 (internal-only)
+└── asr           whisper.cpp medium-q5_0 server   :8080  (internal-only)
 ```
 
-All services share a single private bridge network. Only `frontend` and `backend` expose ports to the host; `postgres` and `llm` are reachable only inside the network.
+All services share a single private bridge network. Only `frontend` and `backend` expose ports to the host; `postgres`, `llm`, and `asr` are reachable only inside the network.
 
 ## Prerequisites
 
@@ -20,7 +21,7 @@ All services share a single private bridge network. Only `frontend` and `backend
 - `docker compose` v2 (built into Docker Desktop)
 - Disk: 15 GB free (model weights + Postgres data volume)
 - **System RAM: 24 GB recommended.** The publisher-supplied `gemma4:e4b` Ollama tag loads ≈10 GiB at runtime (≈9.4 GiB weights + KV cache + compute graph), and the `llm` container needs that plus headroom alongside backend / postgres / frontend / Docker overhead. See `SPEC.md#hardware-assumptions`.
-- **Docker Desktop memory allocation: ≥ 12 GB.** On macOS / Windows, open Docker Desktop → Settings → Resources → Memory and confirm the slider is ≥ 12 GB. Below this the `llm` container fails to load the model with `model requires more system memory than is available` and `POST /encounters/{id}/drafts` returns 503 `inference_unavailable` (see INF-003 history).
+- **Docker Desktop memory allocation: ≥ 13 GB.** On macOS / Windows, open Docker Desktop → Settings → Resources → Memory and confirm the slider is ≥ 13 GB. This covers `gemma4:e4b` (~10 GiB) + `whisper.cpp medium-q5_0` (~1 GiB) + backend/postgres/frontend/Docker overhead (~2 GiB). Below 13 GB the `llm` container may fail to load with `model requires more system memory than is available` (see INF-003 history). 16 GB is recommended for comfortable headroom and for the kotoba-whisper variant swap described in ADR-0001.
 - GPU: optional. With a GPU and ≥10 GB VRAM the same ~10 GiB footprint is paid in VRAM rather than system RAM. The model also runs CPU-only on the reference RAM allocation above (latency ≥3× slower vs GPU per SPEC).
 
 ## First boot
@@ -40,11 +41,25 @@ docker compose exec backend alembic upgrade head
 #    Single supported model — no tier ladder.
 docker compose exec llm ollama pull gemma4:e4b
 
-# 5. Confirm health.
+# 5. The asr service downloads ggml-medium-q5_0.bin (~0.7 GiB) automatically on first
+#    boot from HuggingFace. This happens inside the container at startup — no manual
+#    step required, but the first `docker compose up -d` after INF-004 lands will be
+#    slow while the model downloads. The asr healthcheck has a 120 s start_period to
+#    accommodate this. Subsequent starts skip the download (model is in asr_data volume).
+
+# 6. Confirm health (expect 5 services running).
 docker compose ps --status running
 ```
 
-Expected: 4 services in `running (healthy)` state. If any service is `restarting`, jump to **Troubleshooting**.
+Expected: 5 services in `running` or `running (healthy)` state. If any service is `restarting`, jump to **Troubleshooting**.
+
+> **Port mapping summary** (useful when reading `docker compose ps` output):
+>
+> - `frontend` :3000 → host :3000
+> - `backend` :8000 → host :8000
+> - `postgres` :5432 → internal only
+> - `llm` :11434 → internal only
+> - `asr` :8080 → internal only (whisper-server; no host exposure per PHI rule §1)
 
 ### Schema reset (destructive)
 
@@ -72,9 +87,13 @@ docker compose exec backend pg_isready -h postgres -U app
 # LLM smoke test (smallest possible prompt, ASCII only — no PHI)
 docker compose exec backend curl -fsS http://llm:11434/api/generate \
   -d '{"model":"gemma4:e4b","prompt":"ping","stream":false}'
+
+# ASR readiness check (TCP port only — no audio, no PHI)
+docker compose exec backend python3 -c \
+  "import socket; s=socket.socket(); s.settimeout(4); s.connect(('asr',8080)); s.close(); print('asr:8080 reachable')"
 ```
 
-All four MUST return success before declaring G0 (compose-up) green.
+All five MUST return success before declaring G0 (compose-up) green.
 
 ## Daily commands
 
@@ -124,9 +143,25 @@ If you skip this step the browser (or `curl`) hits the pre-build image. Symptoms
 
 Most often: model not yet pulled. The first generation request blocks while pulling, then times out the healthcheck. Run the `ollama pull` step explicitly before the first request.
 
-### Backend cannot reach `llm`
+### `asr` container is unhealthy / slow to start
 
-Check the service hostname. From `backend`, the URL MUST be `http://llm:11434`, not `localhost`. `localhost` inside a container is the container itself.
+On first boot the `asr` container downloads `ggml-medium-q5_0.bin` (~0.7 GiB) from HuggingFace before starting `whisper-server`. The healthcheck has a 120 s `start_period` to accommodate this. If the download is slow, the container will appear unhealthy temporarily — wait for the model download to complete. Check progress with:
+
+```bash
+docker compose logs -f asr
+```
+
+If the download fails (network issue), the model file may be incomplete. Remove it and restart:
+
+```bash
+docker compose down asr
+docker volume rm $(docker volume ls -q | grep asr_data)
+docker compose up -d asr
+```
+
+### Backend cannot reach `llm` or `asr`
+
+Check the service hostname. From `backend`, the LLM URL MUST be `http://llm:11434` and the ASR URL MUST be `http://asr:8080`, never `localhost`. `localhost` inside a container is the container itself.
 
 ### Postgres connection refused
 

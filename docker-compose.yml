@@ -26,10 +26,16 @@ services:
       - LLM_BASE_URL=http://llm:11434
       - LLM_MODEL=gemma4:e4b
       - LLM_TIMEOUT_S=300
+      # ASR サービス設定 — BE-014 が使うまでは passive（コードは参照しない）
+      - ASR_BASE_URL=http://asr:8080
+      - ASR_MODEL=ggml-medium-q5_0.bin
+      - ASR_TIMEOUT_S=90
     depends_on:
       postgres:
         condition: service_healthy
       llm:
+        condition: service_started
+      asr:
         condition: service_started
     healthcheck:
       # python:slim に curl は含まれないため python -c で代替。/ping はプロセス生存確認のみ。
@@ -73,6 +79,36 @@ services:
     networks:
       - internal
 
+  asr:
+    # GHCR イメージ (ghcr.io/ggml-org/whisper.cpp:main) は linux/amd64 のみ。
+    # Apple Silicon (arm64) 上で Rosetta 2 エミュレーションすると GGML CPU 検出ループで
+    # 無限スピン（2026-05-12 確認）するため、ネイティブビルドを使用する。
+    # docker/asr/Dockerfile が arm64 / amd64 の両方に対応した cmake ビルドを提供する。
+    build:
+      context: ./docker/asr
+      dockerfile: Dockerfile
+    volumes:
+      - asr_data:/models
+    # ポートをホストへ公開しない — internal-only（PHIルール §1 / ADR-0001）
+    # 起動時: /models に ggml-medium-q5_0.bin がなければ HuggingFace からダウンロード後にサーバ起動。
+    # Dockerfile CMD で定義済み — compose の command は不要。
+    healthcheck:
+      # モデルダウンロード込みの初回起動を考慮して start_period を長めに設定。
+      # 軽量 TCP 確認のみ — 全文トランスクリプションは実行しない（RAM 節約）。
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import socket; s=socket.socket(); s.settimeout(4); s.connect(('localhost',8080)); s.close()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 120s
+    networks:
+      - internal
+
 networks:
   internal:
     driver: bridge
@@ -80,3 +116,4 @@ networks:
 volumes:
   postgres_data:
   ollama_data:
+  asr_data:
