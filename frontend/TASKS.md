@@ -11,13 +11,13 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID     | Title                              | Status      | Gates Touched              | Owner     |
-| ------ | ---------------------------------- | ----------- | -------------------------- | --------- |
-| FE-001 | Frontend foundation + Button atom  | done        | G1, G2, G3, G6, G7         | Generator |
-| FE-002 | Patient Search by MRN              | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003 | Record Draft generation UI         | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004 | Draft edit and finalize UI         | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005 | Final correction UI + FE-004 fixes | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
+| ID     | Title                              | Status | Gates Touched              | Owner     |
+| ------ | ---------------------------------- | ------ | -------------------------- | --------- |
+| FE-001 | Frontend foundation + Button atom  | done   | G1, G2, G3, G6, G7         | Generator |
+| FE-002 | Patient Search by MRN              | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003 | Record Draft generation UI         | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004 | Draft edit and finalize UI         | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005 | Final correction UI + FE-004 fixes | done   | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
