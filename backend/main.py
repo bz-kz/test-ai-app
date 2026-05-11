@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AI Medical Record Generator API",
-    docs_url=None,  # OpenAPI ドキュメントは本番では非公開
+    # 対話 UI (/docs, /redoc) は常時非公開 (CLAUDE.md §2 / backend/SPEC.md#api-surface)
+    docs_url=None,
     redoc_url=None,
 )
 

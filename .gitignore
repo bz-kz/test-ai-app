@@ -32,6 +32,9 @@ env/
 .env/
 ENV/
 
+# uv 依存解決ロック (プロジェクトは requirements.txt を信頼; uv はローカルツール扱い)
+uv.lock
+
 # Django/Flask specific
 db.sqlite3
 .env

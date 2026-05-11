@@ -12,6 +12,7 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 
 ## 2. Context & Tech Stack
 
+- **Scope:** Local-only PoC. The whole stack runs on a developer's `localhost` via `docker compose`; there is no remote / staging / production deployment target. Only `frontend` (3000) and `backend` (8000) publish to `localhost`; `postgres` and `llm` stay on the internal compose network. Anything that assumes managed cloud, CDN, load-balancer, or external DNS is out of scope unless an ADR explicitly broadens it.
 - **Monorepo:** `/frontend` (Next.js 15+, TS, Tailwind), `/backend` (Python 3.12+, FastAPI), `/docs`.
 - **Database:** PostgreSQL (compose service `postgres`, internal-only).
 - **LLM:** Local Gemma 4 E4B served by Ollama (compose service `llm`, internal-only). Single tier — Ollama tag `gemma4:e4b`. Hosted-LLM SDKs are forbidden — see `.claude/rules/local-llm-and-phi.md`.
