@@ -3,10 +3,11 @@
 import logging
 import os
 
-import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+
+from app.infrastructure.llm import OllamaLocalLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,6 @@ async def ping() -> PingResponse:
 async def health() -> Response:
     """Postgres と llm が両方到達可能なときのみ 200 を返す。"""
     database_url = os.getenv("DATABASE_URL", "")
-    llm_base_url = os.getenv("LLM_BASE_URL", "http://llm:11434")
 
     postgres_ok = False
     llm_ok = False
@@ -54,13 +54,9 @@ async def health() -> Response:
     except Exception:
         logger.warning("Postgres health check failed")
 
-    # LLM 疎通確認: Ollama の tags エンドポイントに HEAD リクエスト
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{llm_base_url}/api/tags")
-            llm_ok = resp.status_code == 200
-    except Exception:
-        logger.warning("LLM health check failed")
+    # LLM 疎通確認: インフラ層の ping() を経由して直接 httpx は使わない
+    llm_client = OllamaLocalLLMClient()
+    llm_ok = await llm_client.ping()
 
     all_ok = postgres_ok and llm_ok
     return JSONResponse(

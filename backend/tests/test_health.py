@@ -25,16 +25,12 @@ async def test_health_all_ok() -> None:
     """Postgres と LLM の両方が到達可能なとき 200 を返す。"""
     with (
         patch("asyncpg.connect", _make_asyncpg_mock(succeed=True)),
-        patch("httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "app.infrastructure.llm.ollama_client.OllamaLocalLLMClient.ping",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
     ):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_ctx.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value = mock_ctx
-
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/health")
 
@@ -50,16 +46,12 @@ async def test_health_postgres_down() -> None:
     """Postgres が到達不能なとき 503 を返す。"""
     with (
         patch("asyncpg.connect", _make_asyncpg_mock(succeed=False)),
-        patch("httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "app.infrastructure.llm.ollama_client.OllamaLocalLLMClient.ping",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
     ):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_ctx.get = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value = mock_ctx
-
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/health")
 
@@ -74,14 +66,12 @@ async def test_health_llm_down() -> None:
     """LLM が到達不能なとき 503 を返す。"""
     with (
         patch("asyncpg.connect", _make_asyncpg_mock(succeed=True)),
-        patch("httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "app.infrastructure.llm.ollama_client.OllamaLocalLLMClient.ping",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
     ):
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_ctx.get = AsyncMock(side_effect=ConnectionRefusedError("llm unreachable"))
-        mock_client_cls.return_value = mock_ctx
-
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/health")
 
