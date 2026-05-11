@@ -11,7 +11,6 @@
 import { apiFetch } from "@/lib/api";
 import type { Encounter } from "@/types/encounter";
 import type { RecordDraft } from "@/types/recordDraft";
-import type { RecordFinal } from "@/types/recordFinal";
 
 /** listEncountersByPatient の戻り値型 */
 export type ListEncountersResult =
@@ -33,9 +32,6 @@ export type CreateEncounterResult =
   | { kind: "error" };
 
 /** listDraftsByEncounterInService の戻り値型 (encounters サービス用の再エクスポートはしない — drafts.ts を使う) */
-
-/** listFinalsByEncounter の戻り値型 */
-export type ListFinalsResult = { kind: "found"; finals: RecordFinal[] } | { kind: "error" };
 
 /** listDraftsByEncounter (encounters コンテキスト用) の戻り値型 */
 export type ListEncounterDraftsResult =
@@ -137,33 +133,6 @@ export async function createEncounter(
       return { kind: "validation_error", fields: result.fields };
     case "server_error":
       return { kind: "error" };
-    case "network_error":
-      return { kind: "error" };
-  }
-}
-
-/**
- * 受診に紐づく確定カルテ一覧を取得する (GET /encounters/{encounterId}/finals)。
- *
- * - 成功: `{ kind: "found", finals }` — 空配列のこともある
- * - その他エラー: `{ kind: "error" }`
- *
- * @param encounterId 受診 UUID
- * @param opts        AbortSignal など
- */
-export async function listFinalsByEncounter(
-  encounterId: string,
-  opts?: { signal?: AbortSignal }
-): Promise<ListFinalsResult> {
-  const path = `/encounters/${encodeURIComponent(encounterId)}/finals`;
-  const result = await apiFetch<RecordFinal[]>(path, { signal: opts?.signal });
-
-  switch (result.kind) {
-    case "ok":
-      return { kind: "found", finals: result.data };
-    case "not_found":
-    case "validation_error":
-    case "server_error":
     case "network_error":
       return { kind: "error" };
   }

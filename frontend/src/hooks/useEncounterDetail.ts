@@ -12,7 +12,8 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { getEncounterById, listFinalsByEncounter } from "@/services/encounters";
+import { getEncounterById } from "@/services/encounters";
+import { listFinalsByEncounter } from "@/services/finals";
 import { listDraftsByEncounter } from "@/services/drafts";
 import type { Encounter } from "@/types/encounter";
 import type { RecordDraft } from "@/types/recordDraft";

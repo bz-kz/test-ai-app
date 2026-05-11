@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  listEncountersByPatient,
-  getEncounterById,
-  createEncounter,
-  listFinalsByEncounter,
-} from "../encounters";
+import { listEncountersByPatient, getEncounterById, createEncounter } from "../encounters";
 
 // apiFetch をモック — 実際の fetch は呼び出さない
 vi.mock("@/lib/api", () => ({
@@ -18,7 +13,6 @@ const mockApiFetch = vi.mocked(apiFetch);
 const FAKE_PATIENT_ID = "00000000-0000-0000-0000-000000000001";
 const FAKE_ENCOUNTER_ID = "00000000-0000-0000-0000-000000000010";
 const FAKE_CLINICIAN_ID = "00000000-0000-0000-0000-000000000001";
-const FAKE_FINAL_ID = "00000000-0000-0000-0000-000000000030";
 
 const FAKE_ENCOUNTER = {
   id: FAKE_ENCOUNTER_ID,
@@ -26,16 +20,6 @@ const FAKE_ENCOUNTER = {
   encountered_at: "2024-01-15T09:00:00Z",
   clinician_id: FAKE_CLINICIAN_ID,
   created_at: "2024-01-15T09:00:00Z",
-};
-
-const FAKE_FINAL = {
-  id: FAKE_FINAL_ID,
-  encounter_id: FAKE_ENCOUNTER_ID,
-  content: "S: 頭痛。\nO: 正常。\nA: 緊張性頭痛。\nP: 経過観察。",
-  confidence: 0.85,
-  clinician_id: FAKE_CLINICIAN_ID,
-  predecessor_id: null,
-  created_at: "2024-01-15T10:00:00Z",
 };
 
 describe("listEncountersByPatient", () => {
@@ -198,45 +182,6 @@ describe("createEncounter", () => {
     expect(body).toBeDefined();
     const parsed = JSON.parse(body!) as Record<string, unknown>;
     expect(parsed).not.toHaveProperty("clinician_id");
-  });
-});
-
-describe("listFinalsByEncounter", () => {
-  beforeEach(() => {
-    mockApiFetch.mockReset();
-  });
-
-  it("成功時: kind=found と finals 配列を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [FAKE_FINAL] });
-    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
-    expect(result).toEqual({ kind: "found", finals: [FAKE_FINAL] });
-  });
-
-  it("成功 (空): kind=found と空配列を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [] });
-    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
-    expect(result).toEqual({ kind: "found", finals: [] });
-  });
-
-  it("server_error: kind=error を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
-    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
-    expect(result).toEqual({ kind: "error" });
-  });
-
-  it("network_error: kind=error を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
-    const result = await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
-    expect(result).toEqual({ kind: "error" });
-  });
-
-  it("正しいパスで apiFetch を呼び出す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: [] });
-    await listFinalsByEncounter(FAKE_ENCOUNTER_ID);
-    expect(mockApiFetch).toHaveBeenCalledWith(
-      `/encounters/${FAKE_ENCOUNTER_ID}/finals`,
-      expect.anything()
-    );
   });
 });
 

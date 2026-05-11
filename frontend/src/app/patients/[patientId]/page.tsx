@@ -13,6 +13,8 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePatientDetail } from "@/hooks/usePatientDetail";
 import { useCreateEncounter } from "@/hooks/useCreateEncounter";
+import Input from "@/components/atoms/Input";
+import Button from "@/components/atoms/Button";
 
 type Params = { patientId: string };
 
@@ -176,24 +178,24 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
             <label htmlFor="encountered-at" className="mb-1 block text-sm font-medium text-slate">
               受診日
             </label>
-            <input
+            <Input
               id="encountered-at"
               type="date"
               value={dateInput}
               onChange={(e) => setDateInput(e.target.value)}
               disabled={createEnc.status === "submitting"}
-              className="h-[42px] w-full rounded-[8px] border border-slate/30 bg-surface px-3 text-sm text-navy focus:border-navy focus:outline-none focus:ring-2 focus:ring-navy/10 disabled:cursor-not-allowed disabled:opacity-40"
               aria-required="true"
             />
           </div>
-          <button
+          <Button
             type="submit"
+            variant="primary"
+            size="md"
             disabled={createEnc.status === "submitting" || !dateInput}
-            className="h-[42px] rounded-[8px] bg-navy px-5 text-sm font-medium text-white hover:bg-[#020617] disabled:cursor-not-allowed disabled:opacity-40"
-            aria-busy={createEnc.status === "submitting" ? "true" : undefined}
+            loading={createEnc.status === "submitting"}
           >
             {createEnc.status === "submitting" ? "送信中…" : "追加"}
-          </button>
+          </Button>
         </form>
 
         {/* 送信成功メッセージ */}
