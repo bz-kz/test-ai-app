@@ -11,15 +11,15 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                   | Status      | Gates Touched              | Owner     |
-| ------- | ----------------------- | ----------- | -------------------------- | --------- |
-| INF-001 | Runtime Topology        | done        | G0                         | Generator |
-| BE-001  | Inference Adapter       | done        | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence             | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface             | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints       | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints     | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation | in-progress | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| ID      | Title                   | Status | Gates Touched              | Owner     |
+| ------- | ----------------------- | ------ | -------------------------- | --------- |
+| INF-001 | Runtime Topology        | done   | G0                         | Generator |
+| BE-001  | Inference Adapter       | done   | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence             | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface             | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
