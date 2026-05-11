@@ -5,11 +5,13 @@ import { useGenerateDraft } from "../useGenerateDraft";
 // サービス層をモック — 実際の fetch は呼び出さない
 vi.mock("@/services/drafts", () => ({
   createRecordDraft: vi.fn(),
+  streamRecordDraft: vi.fn(),
 }));
 
-import { createRecordDraft } from "@/services/drafts";
+import { createRecordDraft, streamRecordDraft } from "@/services/drafts";
 
 const mockCreate = vi.mocked(createRecordDraft);
+const mockStream = vi.mocked(streamRecordDraft);
 
 const FAKE_ENCOUNTER_ID = "00000000-0000-0000-0000-000000000010";
 
@@ -222,5 +224,154 @@ describe("useGenerateDraft", () => {
 
     expect(result.current.status).toBe("success");
     expect(result.current.elapsedMs).toBe(0);
+  });
+});
+
+// ============================================================
+// generateStream テスト (FE-008)
+// ============================================================
+
+describe("useGenerateDraft — generateStream", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockStream.mockReset();
+    mockCreate.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("generateStream 呼び出し後に status が generating, isStreaming が true になる", async () => {
+    // streamRecordDraft が永遠に pending のまま
+    mockStream.mockImplementation(() => new Promise<never>(() => undefined));
+
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    act(() => {
+      result.current.setClinicalInput("頭痛の訴え");
+    });
+
+    act(() => {
+      result.current.generateStream();
+    });
+
+    expect(result.current.status).toBe("generating");
+    expect(result.current.isStreaming).toBe(true);
+  });
+
+  it("onChunk コールバック: チャンクが到着するたびに streamingText が更新される", async () => {
+    // streamRecordDraft の実装をシミュレート: onChunk を 2 回呼ぶ
+    mockStream.mockImplementation(
+      async (
+        _encounterId: string,
+        _input: string,
+        opts: Parameters<typeof streamRecordDraft>[2]
+      ) => {
+        opts.onChunk("S: ");
+        opts.onChunk("頭痛。");
+        // 完了前に停止 (完了は別テストで確認)
+      }
+    );
+
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    act(() => {
+      result.current.setClinicalInput("入力");
+    });
+
+    await act(async () => {
+      result.current.generateStream();
+      await Promise.resolve();
+    });
+
+    expect(result.current.streamingText).toBe("S: 頭痛。");
+  });
+
+  it("onComplete コールバック: status が success になり draft がセットされ isStreaming が false になる", async () => {
+    const DRAFT_ID = "draft-uuid-001";
+    const CONFIDENCE = 0.88;
+
+    mockStream.mockImplementation(
+      async (
+        _encounterId: string,
+        _input: string,
+        opts: Parameters<typeof streamRecordDraft>[2]
+      ) => {
+        opts.onChunk("S: 完了テキスト。");
+        opts.onComplete({ draftId: DRAFT_ID, confidence: CONFIDENCE });
+      }
+    );
+
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    act(() => {
+      result.current.setClinicalInput("入力");
+    });
+
+    await act(async () => {
+      result.current.generateStream();
+      await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe("success");
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.draft).not.toBeNull();
+    expect(result.current.draft?.id).toBe(DRAFT_ID);
+    expect(result.current.draft?.confidence).toBe(CONFIDENCE);
+    expect(result.current.draft?.content).toBe("S: 完了テキスト。");
+  });
+
+  it("cancel: generateStream 中に cancel() を呼ぶと idle に戻り streamingText がリセットされる", async () => {
+    mockStream.mockImplementation(() => new Promise<never>(() => undefined));
+
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    act(() => {
+      result.current.setClinicalInput("入力");
+    });
+
+    act(() => {
+      result.current.generateStream();
+    });
+
+    expect(result.current.status).toBe("generating");
+    expect(result.current.isStreaming).toBe(true);
+
+    act(() => {
+      result.current.cancel();
+    });
+
+    expect(result.current.status).toBe("idle");
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.streamingText).toBe("");
+    expect(result.current.elapsedMs).toBe(0);
+  });
+
+  it("onError コールバック: inference_unavailable でエラー状態に遷移する", async () => {
+    mockStream.mockImplementation(
+      async (
+        _encounterId: string,
+        _input: string,
+        opts: Parameters<typeof streamRecordDraft>[2]
+      ) => {
+        opts.onError({ kind: "inference_unavailable" });
+      }
+    );
+
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    act(() => {
+      result.current.setClinicalInput("入力");
+    });
+
+    await act(async () => {
+      result.current.generateStream();
+      await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe("inference_unavailable");
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.error).toMatch(/推論サービスが一時的に利用できません/);
   });
 });

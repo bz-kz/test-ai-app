@@ -9,6 +9,7 @@
  * 下書き生成は encounter/draft ドメインに属し、責務が異なるため分離した。
  */
 import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, CLINICIAN_ID } from "@/lib/constants";
 import type { RecordDraft } from "@/types/recordDraft";
 import type { RecordFinal } from "@/types/recordFinal";
 
@@ -222,6 +223,188 @@ export async function listDraftsByEncounter(
     case "server_error":
     case "network_error":
       return { kind: "error" };
+  }
+}
+
+/** streamRecordDraft の onError に渡すエラー種別 */
+export type StreamDraftErrorKind =
+  | "encounter_not_found"
+  | "validation_error"
+  | "inference_unavailable"
+  | "error";
+
+/** streamRecordDraft のコールバック群 */
+export interface StreamDraftOpts {
+  /** チャンク到着ごとに呼ばれる。text は今回届いたテキスト片 (PHI — ログ不可) */
+  onChunk: (text: string) => void;
+  /** ストリーム完了時に呼ばれる */
+  onComplete: (info: { draftId: string; confidence: number | null }) => void;
+  /** エラー発生時に呼ばれる */
+  onError: (info: { kind: StreamDraftErrorKind }) => void;
+  /** AbortSignal — セットされていればキャンセルに使う */
+  signal?: AbortSignal;
+}
+
+/**
+ * SSE ストリーミングで下書きを生成する (POST /encounters/{id}/drafts/stream)。
+ *
+ * BE-013 の SSE フレーム形式:
+ *   - チャンク: `data: {"text":"...","done":false,"confidence":null}\n\n`
+ *   - 完了:     `event: complete\ndata: {"draft_id":"...","confidence":<number|null>}\n\n`
+ *   - エラー:   `event: error\ndata: {"code":"...","message":"..."}\n\n`
+ *
+ * 同期エラー (HTTP 404/422/503 など) はストリーム開始前に onError を呼ぶ。
+ * PHI (clinical_input, chunk text, assembled content) はログに出力しない。
+ *
+ * @param encounterId  受診 UUID
+ * @param clinicalInput  臨床入力 (PHI)
+ * @param opts  コールバック群 + AbortSignal
+ */
+export async function streamRecordDraft(
+  encounterId: string,
+  clinicalInput: string,
+  opts: StreamDraftOpts
+): Promise<void> {
+  const url = `${API_BASE_URL}/encounters/${encodeURIComponent(encounterId)}/drafts/stream`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // BE-012 の clinician_id ヘッダー — apiFetch と同じ定数を使う
+        "X-Clinician-Id": CLINICIAN_ID,
+      },
+      body: JSON.stringify({ clinical_input: clinicalInput }),
+      signal: opts.signal,
+    });
+  } catch (err) {
+    // AbortError はキャンセルの正常系 — 呼び出し元 (hook) が処理する
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw err;
+    }
+    opts.onError({ kind: "error" });
+    return;
+  }
+
+  // 同期エラー: ストリーム開始前に HTTP ステータスで判定する
+  if (!response.ok) {
+    if (response.status === 404) {
+      opts.onError({ kind: "encounter_not_found" });
+    } else if (response.status === 422) {
+      opts.onError({ kind: "validation_error" });
+    } else if (response.status === 503) {
+      opts.onError({ kind: "inference_unavailable" });
+    } else {
+      opts.onError({ kind: "error" });
+    }
+    return;
+  }
+
+  // ストリーム読み取り
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  // バッファ: 未処理の受信テキストを蓄積する
+  let buffer = "";
+
+  /**
+   * SSE フレームを解析してコールバックを呼び出す。
+   * フレームは `\n\n` で区切られ、各行は `event:` または `data:` で始まる。
+   * event 行のないフレームはデータチャンクとして扱う。
+   */
+  function processFrames(raw: string): void {
+    // フレームは `\n\n` で分割する
+    const frames = raw.split("\n\n");
+    for (const frame of frames) {
+      if (frame.trim() === "") continue;
+
+      let eventType: string | null = null;
+      let dataLine: string | null = null;
+
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) {
+          eventType = line.slice("event:".length).trim();
+        } else if (line.startsWith("data:")) {
+          dataLine = line.slice("data:".length).trim();
+        }
+      }
+
+      if (dataLine === null) continue;
+
+      // JSON パース失敗は静かにスキップ (不完全フレームは次のチャンクで補完)
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(dataLine) as unknown;
+      } catch {
+        continue;
+      }
+
+      if (eventType === "complete") {
+        // 完了フレーム: { draft_id, confidence }
+        const p = parsed as Record<string, unknown>;
+        const draftId = typeof p["draft_id"] === "string" ? p["draft_id"] : "";
+        const confidence = typeof p["confidence"] === "number" ? p["confidence"] : null;
+        opts.onComplete({ draftId, confidence });
+      } else if (eventType === "error") {
+        // エラーフレーム: { code, message }
+        const p = parsed as Record<string, unknown>;
+        const code = typeof p["code"] === "string" ? p["code"] : "";
+        let kind: StreamDraftErrorKind;
+        switch (code) {
+          case "encounter_not_found":
+            kind = "encounter_not_found";
+            break;
+          case "inference_unavailable":
+            kind = "inference_unavailable";
+            break;
+          default:
+            kind = "error";
+        }
+        opts.onError({ kind });
+      } else {
+        // データチャンク: { text, done, confidence }
+        const p = parsed as Record<string, unknown>;
+        const text = typeof p["text"] === "string" ? p["text"] : "";
+        if (text !== "") {
+          opts.onChunk(text);
+        }
+      }
+    }
+  }
+
+  try {
+    while (true) {
+      // signal.aborted を読み取り前に確認する
+      if (opts.signal?.aborted) {
+        reader.cancel().catch(() => undefined);
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // バッファを `\n\n` で分割し、最後の要素 (未完了フレームの可能性) は残す
+      const lastSep = buffer.lastIndexOf("\n\n");
+      if (lastSep !== -1) {
+        const toProcess = buffer.slice(0, lastSep + 2);
+        buffer = buffer.slice(lastSep + 2);
+        processFrames(toProcess);
+      }
+    }
+
+    // ストリーム終端: 残バッファを処理する
+    if (buffer.trim() !== "") {
+      processFrames(buffer);
+    }
+  } catch (err) {
+    // AbortError はキャンセルの正常系
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw err;
+    }
+    opts.onError({ kind: "error" });
   }
 }
 

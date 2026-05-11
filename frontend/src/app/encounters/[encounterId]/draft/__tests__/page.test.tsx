@@ -89,6 +89,9 @@ function makeGenerateReturn(overrides: Partial<ReturnType<typeof useGenerateDraf
     setDraft: vi.fn(),
     error: null,
     generate: vi.fn(),
+    generateStream: vi.fn(),
+    streamingText: "",
+    isStreaming: false,
     cancel: vi.fn(),
     elapsedMs: 0,
     ...overrides,
@@ -657,5 +660,90 @@ describe("DraftPage (FE-006: chain UI in finalized mode)", () => {
       { status: "error", chain: [], error: "訂正履歴の読み込み中にエラーが発生しました。" }
     );
     expect(screen.getByText("訂正履歴を取得できませんでした。")).toBeInTheDocument();
+  });
+});
+
+// ============================================================
+// FE-008 の追加テスト
+// ============================================================
+
+describe("DraftPage (FE-008: streaming generate)", () => {
+  it("generating かつ isStreaming=true かつ streamingText がある: AIIndicatedText + Cursor が表示される", async () => {
+    await renderPage({
+      status: "generating",
+      clinicalInput: "入力済み",
+      elapsedMs: 200,
+      isStreaming: true,
+      streamingText: "S: 頭痛の訴え。",
+    });
+    // AIIndicatedText (role=article) が描画される
+    expect(screen.getByRole("article", { name: "AI 生成テキスト" })).toBeInTheDocument();
+    // ストリーミングテキストが表示される
+    expect(screen.getByText(/S: 頭痛の訴え。/)).toBeInTheDocument();
+    // スケルトンは表示されない (streamingText がある)
+    expect(screen.queryByLabelText("生成中")).toBeNull();
+  });
+
+  it("generating かつ isStreaming=true かつ streamingText が空: スケルトンが表示される (1000ms 以上)", async () => {
+    await renderPage({
+      status: "generating",
+      clinicalInput: "入力済み",
+      elapsedMs: 1500,
+      isStreaming: true,
+      streamingText: "",
+    });
+    // チャンク未到着なのでスケルトンにフォールバックする
+    expect(screen.getByLabelText("生成中")).toBeInTheDocument();
+    // AIIndicatedText は表示されない
+    expect(screen.queryByRole("article", { name: "AI 生成テキスト" })).toBeNull();
+  });
+
+  it("generating かつ isStreaming=false: 従来のスケルトン表示になる", async () => {
+    await renderPage({
+      status: "generating",
+      clinicalInput: "入力済み",
+      elapsedMs: 1500,
+      isStreaming: false,
+      streamingText: "",
+    });
+    expect(screen.getByLabelText("生成中")).toBeInTheDocument();
+  });
+
+  it("generating かつ elapsedMs >= 10000 かつ isStreaming=true: キャンセルボタンが表示される", async () => {
+    await renderPage({
+      status: "generating",
+      clinicalInput: "入力済み",
+      elapsedMs: 12000,
+      isStreaming: true,
+      streamingText: "S: テキスト",
+    });
+    expect(screen.getByRole("button", { name: "キャンセル" })).toBeInTheDocument();
+  });
+
+  it("「下書きを生成」ボタンクリックで generateStream が呼ばれる", async () => {
+    const mockGenerateStream = vi.fn();
+    await renderPage({
+      status: "idle",
+      clinicalInput: "入力済み",
+      generateStream: mockGenerateStream,
+    });
+    const button = screen.getByRole("button", { name: "下書きを生成" });
+    button.click();
+    expect(mockGenerateStream).toHaveBeenCalledOnce();
+  });
+
+  it("「再生成」ボタンクリックで generateStream が呼ばれる", async () => {
+    const mockGenerateStream = vi.fn();
+    await renderPage(
+      {
+        status: "success",
+        draft: FAKE_DRAFT,
+        generateStream: mockGenerateStream,
+      },
+      { mode: "view" }
+    );
+    const regenButton = screen.getByRole("button", { name: "再生成" });
+    regenButton.click();
+    expect(mockGenerateStream).toHaveBeenCalledOnce();
   });
 });

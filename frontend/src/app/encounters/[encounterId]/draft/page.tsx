@@ -39,6 +39,7 @@ import {
   LATENCY_CANCEL_MS,
 } from "@/lib/constants";
 import Button from "@/components/atoms/Button";
+import Cursor from "@/components/atoms/Cursor";
 import TextArea from "@/components/atoms/TextArea";
 import FormField from "@/components/molecules/FormField";
 import AIIndicatedText from "@/components/molecules/AIIndicatedText";
@@ -153,7 +154,9 @@ export default function DraftPage({ params }: DraftPageProps) {
     draft,
     setDraft,
     error,
-    generate,
+    generateStream,
+    streamingText,
+    isStreaming,
     cancel,
     elapsedMs,
   } = gen;
@@ -241,7 +244,7 @@ export default function DraftPage({ params }: DraftPageProps) {
             size="md"
             disabled={isButtonDisabled}
             loading={showButtonSpinner}
-            onClick={generate}
+            onClick={generateStream}
           >
             下書きを生成
           </Button>
@@ -266,23 +269,36 @@ export default function DraftPage({ params }: DraftPageProps) {
         {/* generating: レイテンシ UX 階層 */}
         {isGenerating && (
           <div>
-            {/* 1000ms 未満: 空の出力エリア (スピナーはボタン内) — 何も表示しない */}
+            {/* ストリーミング中かつチャンクが届き始めていればテキストを表示する。
+                チャンクが届く前はスケルトン階層 (1000ms 以上) でフォールバックする。
+                DESIGN.md: ストリーミングテキストの隣にキャレットカーソルを表示する。
+                スピナーとキャレットは同時に表示しない。 */}
+            {isStreaming && streamingText !== "" ? (
+              <AIIndicatedText>
+                <pre className="whitespace-pre-wrap font-body text-sm text-navy">
+                  {streamingText}
+                  <Cursor />
+                </pre>
+              </AIIndicatedText>
+            ) : (
+              <>
+                {/* 1000ms 以上: スケルトン (チャンク未到着時のフォールバック) */}
+                {elapsedMs >= LATENCY_SKELETON_MS && (
+                  <div className="space-y-3" role="status" aria-label="生成中">
+                    <div className="h-4 animate-pulse rounded bg-slate-100" />
+                    <div className="h-4 w-5/6 animate-pulse rounded bg-slate-100" />
+                    <div className="h-4 w-4/6 animate-pulse rounded bg-slate-100" />
+                  </div>
+                )}
 
-            {/* 1000ms 以上: スケルトン */}
-            {elapsedMs >= LATENCY_SKELETON_MS && (
-              <div className="space-y-3" role="status" aria-label="生成中">
-                <div className="h-4 animate-pulse rounded bg-slate-100" />
-                <div className="h-4 w-5/6 animate-pulse rounded bg-slate-100" />
-                <div className="h-4 w-4/6 animate-pulse rounded bg-slate-100" />
-              </div>
+                {/* 3000ms 以上: ヒントテキスト */}
+                {elapsedMs >= LATENCY_HINT_MS && (
+                  <p className="mt-3 text-sm text-slate">ローカルモデル応答待ち…</p>
+                )}
+              </>
             )}
 
-            {/* 3000ms 以上: ヒントテキスト */}
-            {elapsedMs >= LATENCY_HINT_MS && (
-              <p className="mt-3 text-sm text-slate">ローカルモデル応答待ち…</p>
-            )}
-
-            {/* 10000ms 以上: キャンセルボタン */}
+            {/* 10000ms 以上: キャンセルボタン (ストリーミング中も表示する) */}
             {elapsedMs >= LATENCY_CANCEL_MS && (
               <div className="mt-4">
                 <Button variant="secondary" size="sm" onClick={cancel}>
@@ -310,8 +326,8 @@ export default function DraftPage({ params }: DraftPageProps) {
 
             {/* アクションボタン: 再生成 / 編集 / 承認 (固定順序 per frontend/SPEC.md#ai-output-patterns) */}
             <div className="mt-4 flex items-center gap-3">
-              {/* 再生成 — FE-003 の generate() を再実行する */}
-              <Button variant="secondary" size="sm" onClick={generate}>
+              {/* 再生成 — FE-008 のストリーミングパスで再実行する */}
+              <Button variant="secondary" size="sm" onClick={generateStream}>
                 <RefreshIcon />
                 再生成
               </Button>

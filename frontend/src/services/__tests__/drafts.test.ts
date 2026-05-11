@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   createRecordDraft,
   editRecordDraft,
   finalizeRecordDraft,
   getRecordFinalById,
   listDraftsByEncounter,
+  streamRecordDraft,
 } from "../drafts";
 
 // apiFetch をモック — 実際の fetch は呼び出さない
@@ -227,5 +228,173 @@ describe("getRecordFinalById", () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
     const result = await getRecordFinalById(FAKE_FINAL_ID);
     expect(result).toEqual({ kind: "error" });
+  });
+});
+
+// ============================================================
+// streamRecordDraft テスト (FE-008)
+// ============================================================
+
+/**
+ * ReadableStream を模倣するヘルパー。
+ * chunks 配列を SSE フレームとしてそのまま送る。
+ */
+function makeStreamBody(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+}
+
+describe("streamRecordDraft", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("SSE ハッピーパス: onChunk + onComplete が正しい順序で呼ばれる", async () => {
+    const sseData = [
+      `data: {"text":"S: ","done":false,"confidence":null}\n\n`,
+      `data: {"text":"頭痛。","done":false,"confidence":null}\n\n`,
+      `event: complete\ndata: {"draft_id":"abc-123","confidence":0.9}\n\n`,
+    ];
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(makeStreamBody(sseData), { status: 200 }));
+
+    const onChunk = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", { onChunk, onComplete, onError });
+
+    expect(onChunk).toHaveBeenCalledTimes(2);
+    expect(onChunk).toHaveBeenNthCalledWith(1, "S: ");
+    expect(onChunk).toHaveBeenNthCalledWith(2, "頭痛。");
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledWith({ draftId: "abc-123", confidence: 0.9 });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("SSE エラーフレーム: onError が inference_unavailable で呼ばれる", async () => {
+    const sseData = [
+      `event: error\ndata: {"code":"inference_unavailable","message":"LLM down"}\n\n`,
+    ];
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(makeStreamBody(sseData), { status: 200 }));
+
+    const onChunk = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", { onChunk, onComplete, onError });
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith({ kind: "inference_unavailable" });
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("HTTP 404: onError が encounter_not_found で呼ばれる", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const onError = vi.fn();
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", {
+      onChunk: vi.fn(),
+      onComplete: vi.fn(),
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledWith({ kind: "encounter_not_found" });
+  });
+
+  it("HTTP 422: onError が validation_error で呼ばれる", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 422 }));
+
+    const onError = vi.fn();
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", {
+      onChunk: vi.fn(),
+      onComplete: vi.fn(),
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledWith({ kind: "validation_error" });
+  });
+
+  it("HTTP 503: onError が inference_unavailable で呼ばれる", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 503 }));
+
+    const onError = vi.fn();
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", {
+      onChunk: vi.fn(),
+      onComplete: vi.fn(),
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledWith({ kind: "inference_unavailable" });
+  });
+
+  it("HTTP 500 (その他): onError が error で呼ばれる", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 500 }));
+
+    const onError = vi.fn();
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", {
+      onChunk: vi.fn(),
+      onComplete: vi.fn(),
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledWith({ kind: "error" });
+  });
+
+  it("signal.abort() でリクエストが中断される (AbortError が再スローされる)", async () => {
+    const mockFetch = vi.mocked(fetch);
+    const abortError = new DOMException("Aborted", "AbortError");
+    mockFetch.mockRejectedValueOnce(abortError);
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const onError = vi.fn();
+    await expect(
+      streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", {
+        onChunk: vi.fn(),
+        onComplete: vi.fn(),
+        onError,
+        signal: controller.signal,
+      })
+    ).rejects.toThrow("Aborted");
+
+    // onError はキャンセル時に呼ばれない
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("X-Clinician-Id ヘッダーが fetch リクエストに含まれる", async () => {
+    const sseData = [`event: complete\ndata: {"draft_id":"x","confidence":null}\n\n`];
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(makeStreamBody(sseData), { status: 200 }));
+
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", {
+      onChunk: vi.fn(),
+      onComplete: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/encounters/${FAKE_ENCOUNTER_ID}/drafts/stream`),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Clinician-Id": expect.any(String) }),
+      })
+    );
   });
 });

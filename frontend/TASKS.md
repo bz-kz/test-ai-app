@@ -11,16 +11,17 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID      | Title                                                    | Status | Gates Touched              | Owner     |
-| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
-| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| ID      | Title                                                    | Status      | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ----------- | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done        | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| FE-008  | Streaming draft UI consumer                              | in-progress | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 ---
 
@@ -257,6 +258,36 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; family_name, given_name, MRN, DOB, draft/final content excerpts are displayed in operational-read path per `.claude/rules/local-llm-and-phi.md` §4; no PHI in console, storage, or URL.
 - **Gates Touched:** G0, G1, G2, G3, G4, G6, G7
 - **Affected Layers:** hooks (useCreateEncounter), services (finals extension), app (two new pages + patients search update)
+
+---
+
+## Streaming draft UI consumer (FE-008)
+
+- **Goal:** Replace the non-stream Generate action on `/encounters/[encounterId]/draft` with a streaming Generate that consumes BE-013's SSE endpoint. Show text accumulating in real-time inside an `<AIIndicatedText>` block with a blinking 1-px caret cursor per DESIGN.md Streaming Text spec; remove the cursor on stream completion. Wire the cancel button at the >10s latency tier.
+- **Inputs:**
+  - frontend/SPEC.md#ai-output-patterns — streaming caret cursor (1 px, body size, 70% opacity); cursor removed on completion
+  - frontend/SPEC.md#latency-ux-budget — 5 tiers: ≤300ms invisible, 300-1000ms spinner, 1-3s skeleton, 3-10s skeleton+hint, >10s cancel
+  - SPEC.md#inference-layer-contract — BE-013 SSE endpoint POST /encounters/{id}/drafts/stream
+  - .claude/rules/local-llm-and-phi.md §3 §4 — clinical_input + streaming text + assembled content are PHI
+  - DESIGN.md#ai-output-patterns — streaming caret spec
+- **Acceptance:**
+  - [x] `streamRecordDraft` added to `services/drafts.ts`; uses raw fetch with X-Clinician-Id header; parses SSE frames; calls onChunk/onComplete/onError callbacks; honours AbortSignal; no PHI in logs.
+  - [x] Unit tests for `streamRecordDraft` in `services/__tests__/drafts.test.ts`: SSE happy path, 404/422/503/generic error, abort.
+  - [x] `useGenerateDraft` extended with `generateStream()`, `streamingText: string`, `isStreaming: boolean`; existing non-stream `generate()` and tests preserved.
+  - [x] Hook tests in `hooks/__tests__/useGenerateDraft.test.ts`: ≥4 new tests for stream chunks, completion, cancel, and error.
+  - [x] `Cursor` atom in `frontend/src/components/atoms/Cursor.tsx`: 1px×1em box, body colour at 70% opacity, CSS blink animation, `aria-hidden="true"`.
+  - [x] Draft page: `generateStream()` wired to "下書きを生成" button; during `isStreaming` renders `<AIIndicatedText>{streamingText}<Cursor /></AIIndicatedText>`; cursor removed on success; existing latency UX tiers preserved; cancel at >10s works.
+  - [x] Cross-cutting: 0 `fetch(` in components/app; 0 `console.*`; 0 storage writes; 0 `: any`; no `dangerouslySetInnerHTML`.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — ≥290 tests pass.
+  - [x] G4 security-check — no PHI in logs; no hosted-LLM SDKs.
+- **Out-of-scope:** Server-sent reconnect logic; resumable streams; per-encounter cancel that survives navigation; user-visible token counter; multi-stream concurrency.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes — UI now consumes the streaming inference path.
+- **Data Sensitivity:** PHI; clinical_input + streaming text + assembled content are PHI per .claude/rules/local-llm-and-phi.md §3.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** services (extend drafts.ts), hooks (extend useGenerateDraft), atoms (Cursor), app (page swap to stream)
 
 ---
 
