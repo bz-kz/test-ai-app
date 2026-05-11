@@ -100,20 +100,21 @@ export async function createRecordDraft(
  *
  * @param draftId  下書き UUID
  * @param content  編集後の本文 (PHI) — ログに出力しない
- * @param clinicianId  臨床医 UUID
  * @param opts  AbortSignal など
+ *
+ * clinician_id は X-Clinician-Id ヘッダー経由で送信される (BE-012)。
+ * body 側で受け付けると backend Pydantic `extra="forbid"` で 422 になる。
  */
 export async function editRecordDraft(
   draftId: string,
   content: string,
-  clinicianId: string,
   opts?: { signal?: AbortSignal }
 ): Promise<EditDraftResult> {
   const path = `/drafts/${encodeURIComponent(draftId)}`;
 
   const result = await apiFetch<RecordDraft>(path, {
     method: "PATCH",
-    body: JSON.stringify({ content, clinician_id: clinicianId }),
+    body: JSON.stringify({ content }),
     signal: opts?.signal,
   });
 
@@ -145,19 +146,20 @@ export async function editRecordDraft(
  * - その他エラー: `{ kind: "error" }`
  *
  * @param draftId  下書き UUID
- * @param clinicianId  臨床医 UUID
  * @param opts  AbortSignal など
+ *
+ * clinician_id は X-Clinician-Id ヘッダー経由で送信される (BE-012)。
+ * body 側で受け付けると backend Pydantic `extra="forbid"` で 422 になる。
  */
 export async function finalizeRecordDraft(
   draftId: string,
-  clinicianId: string,
   opts?: { signal?: AbortSignal }
 ): Promise<FinalizeDraftResult> {
   const path = `/drafts/${encodeURIComponent(draftId)}/finalize`;
 
   const result = await apiFetch<RecordFinal>(path, {
     method: "POST",
-    body: JSON.stringify({ clinician_id: clinicianId }),
+    body: JSON.stringify({}),
     signal: opts?.signal,
   });
 

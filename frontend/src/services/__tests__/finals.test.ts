@@ -42,37 +42,37 @@ describe("correctRecordFinal", () => {
 
   it("成功時: kind=created を返し訂正後の RecordFinal を含む", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_CORRECTED_FINAL });
-    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容", FAKE_CLINICIAN_ID);
+    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容");
     expect(result).toEqual({ kind: "created", final: FAKE_CORRECTED_FINAL });
   });
 
   it("404: kind=final_not_found を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "not_found" });
-    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容", FAKE_CLINICIAN_ID);
+    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容");
     expect(result).toEqual({ kind: "final_not_found" });
   });
 
   it("422: kind=validation_error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "validation_error", fields: ["content"] });
-    const result = await correctRecordFinal(FAKE_FINAL_ID, "", FAKE_CLINICIAN_ID);
+    const result = await correctRecordFinal(FAKE_FINAL_ID, "");
     expect(result).toEqual({ kind: "validation_error", fields: ["content"] });
   });
 
   it("server_error: kind=error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
-    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容", FAKE_CLINICIAN_ID);
+    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容");
     expect(result).toEqual({ kind: "error" });
   });
 
   it("network_error: kind=error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
-    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容", FAKE_CLINICIAN_ID);
+    const result = await correctRecordFinal(FAKE_FINAL_ID, "訂正内容");
     expect(result).toEqual({ kind: "error" });
   });
 
   it("POST メソッドと正しいパスで apiFetch を呼び出す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_CORRECTED_FINAL });
-    await correctRecordFinal(FAKE_FINAL_ID, "訂正内容", FAKE_CLINICIAN_ID);
+    await correctRecordFinal(FAKE_FINAL_ID, "訂正内容");
     expect(mockApiFetch).toHaveBeenCalledWith(
       `/finals/${FAKE_FINAL_ID}/correct`,
       expect.objectContaining({ method: "POST" })

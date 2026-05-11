@@ -42,7 +42,7 @@ describe("useCorrectFinal", () => {
   });
 
   it("初期状態は mode=view, status=idle, error=null, correctedFinal=null", () => {
-    const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+    const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
     expect(result.current.mode).toBe("view");
     expect(result.current.status).toBe("idle");
     expect(result.current.error).toBeNull();
@@ -51,7 +51,7 @@ describe("useCorrectFinal", () => {
 
   describe("enter", () => {
     it("view → correcting に遷移し、content が sourceFinal.content で初期化される", () => {
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
       });
@@ -60,7 +60,7 @@ describe("useCorrectFinal", () => {
     });
 
     it("sourceFinal が null のとき enter は何もしない", () => {
-      const { result } = renderHook(() => useCorrectFinal(null, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(null));
       act(() => {
         result.current.enter();
       });
@@ -70,7 +70,7 @@ describe("useCorrectFinal", () => {
 
   describe("cancel", () => {
     it("correcting → view に戻り、content が空になり status=idle になる", () => {
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
       });
@@ -87,7 +87,7 @@ describe("useCorrectFinal", () => {
 
     it("submitting 中に cancel を呼ぶと mode=view, status=idle に戻る", async () => {
       mockCorrect.mockImplementation(() => new Promise<never>(() => undefined));
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
 
       act(() => {
         result.current.enter();
@@ -111,7 +111,7 @@ describe("useCorrectFinal", () => {
     it("成功時: mode=view に戻り correctedFinal が設定される", async () => {
       mockCorrect.mockResolvedValueOnce({ kind: "created", final: FAKE_CORRECTED_FINAL });
 
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
         result.current.setContent("訂正後の内容");
@@ -129,7 +129,7 @@ describe("useCorrectFinal", () => {
 
     it("submit 中は status が submitting になる", () => {
       mockCorrect.mockImplementation(() => new Promise<never>(() => undefined));
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
 
       act(() => {
         result.current.enter();
@@ -144,7 +144,7 @@ describe("useCorrectFinal", () => {
 
     it("final_not_found: status=error と日本語エラーメッセージが設定される", async () => {
       mockCorrect.mockResolvedValueOnce({ kind: "final_not_found" });
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
         result.current.setContent("訂正内容");
@@ -162,7 +162,7 @@ describe("useCorrectFinal", () => {
 
     it("validation_error: status=error と日本語エラーメッセージが設定される", async () => {
       mockCorrect.mockResolvedValueOnce({ kind: "validation_error", fields: ["content"] });
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
         result.current.setContent("訂正内容");
@@ -178,7 +178,7 @@ describe("useCorrectFinal", () => {
 
     it("error: status=error と汎用エラーメッセージが設定される", async () => {
       mockCorrect.mockResolvedValueOnce({ kind: "error" });
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
         result.current.setContent("訂正内容");
@@ -193,7 +193,7 @@ describe("useCorrectFinal", () => {
     });
 
     it("content が空白のみの場合は submit が何もしない", async () => {
-      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useCorrectFinal(FAKE_FINAL));
       act(() => {
         result.current.enter();
         result.current.setContent("   ");

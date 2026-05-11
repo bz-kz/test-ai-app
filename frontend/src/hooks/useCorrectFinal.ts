@@ -11,7 +11,7 @@
  *
  * 引数:
  *   sourceFinal   — 訂正元の確定カルテ (null のときは訂正不可)
- *   clinicianId   — 臨床医 UUID
+ *   clinicianId は不要 — BE-012 以降は X-Clinician-Id ヘッダー経由で認証する
  *
  * 戻り値は UseCorrectFinalReturn 参照。
  */
@@ -66,12 +66,8 @@ function toErrorMessage(kind: string): string {
  * useCorrectFinal フック。
  *
  * @param sourceFinal  訂正元の確定カルテ (null のときは訂正不可)
- * @param clinicianId  臨床医 UUID
  */
-export function useCorrectFinal(
-  sourceFinal: RecordFinal | null,
-  clinicianId: string
-): UseCorrectFinalReturn {
+export function useCorrectFinal(sourceFinal: RecordFinal | null): UseCorrectFinalReturn {
   const [mode, setMode] = useState<CorrectFinalMode>("view");
   const [content, setContent] = useState<string>("");
   const [correctedFinal, setCorrectedFinal] = useState<RecordFinal | null>(null);
@@ -111,7 +107,7 @@ export function useCorrectFinal(
     setError(null);
 
     try {
-      const result = await correctRecordFinal(sourceFinal.id, content, clinicianId, {
+      const result = await correctRecordFinal(sourceFinal.id, content, {
         signal: controller.signal,
       });
 
@@ -148,7 +144,7 @@ export function useCorrectFinal(
       setStatus("error");
       setError(toErrorMessage("error"));
     }
-  }, [sourceFinal, content, clinicianId]);
+  }, [sourceFinal, content]);
 
   return {
     mode,

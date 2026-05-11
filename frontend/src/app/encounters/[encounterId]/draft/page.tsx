@@ -143,8 +143,7 @@ export default function DraftPage({ params }: DraftPageProps) {
   // Next.js 15 の async params を React.use() で同期的に読み取る
   const { encounterId } = React.use(params);
 
-  // 臨床医 ID プレースホルダー (認証 Block で置き換える)
-  const [clinicianId] = useState<string>("00000000-0000-0000-0000-000000000001");
+  // BE-012 以降: clinician_id は X-Clinician-Id ヘッダー経由で apiFetch に注入される (lib/api.ts + CLINICIAN_ID constant)
 
   const gen = useGenerateDraft(encounterId);
   const {
@@ -160,7 +159,7 @@ export default function DraftPage({ params }: DraftPageProps) {
   } = gen;
 
   // onDraftUpdated で saveEdit 成功時に draft を即座に更新する (FE-005 fix #2)
-  const lifecycle = useDraftLifecycle(draft, clinicianId, { onDraftUpdated: setDraft });
+  const lifecycle = useDraftLifecycle(draft, { onDraftUpdated: setDraft });
 
   // currentFinal: lifecycle.approve() 成功後の確定カルテ、または訂正後の最新版
   const [currentFinal, setCurrentFinal] = useState<RecordFinal | null>(null);
@@ -172,7 +171,7 @@ export default function DraftPage({ params }: DraftPageProps) {
     }
   }, [lifecycle.final]);
 
-  const correction = useCorrectFinal(currentFinal, clinicianId);
+  const correction = useCorrectFinal(currentFinal);
 
   // 訂正成功後: correctedFinal を currentFinal として採用し chain head を更新する
   useEffect(() => {

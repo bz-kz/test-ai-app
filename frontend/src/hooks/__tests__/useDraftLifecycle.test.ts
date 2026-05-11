@@ -44,7 +44,7 @@ describe("useDraftLifecycle", () => {
   });
 
   it("初期状態は mode=view, status=idle, error=null, final=null", () => {
-    const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+    const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
     expect(result.current.mode).toBe("view");
     expect(result.current.status).toBe("idle");
     expect(result.current.error).toBeNull();
@@ -53,7 +53,7 @@ describe("useDraftLifecycle", () => {
 
   describe("enterEditMode", () => {
     it("view → editing に遷移し、editContent が draft.content で初期化される", () => {
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
       act(() => {
         result.current.enterEditMode();
       });
@@ -62,7 +62,7 @@ describe("useDraftLifecycle", () => {
     });
 
     it("draft が null のとき enterEditMode は何もしない", () => {
-      const { result } = renderHook(() => useDraftLifecycle(null, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(null));
       act(() => {
         result.current.enterEditMode();
       });
@@ -72,7 +72,7 @@ describe("useDraftLifecycle", () => {
 
   describe("cancelEdit", () => {
     it("editing → view に戻り、editContent が空になる", () => {
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
       act(() => {
         result.current.enterEditMode();
       });
@@ -86,7 +86,7 @@ describe("useDraftLifecycle", () => {
     });
 
     it("status が error のときに cancelEdit を呼ぶと idle に戻る", () => {
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
       act(() => {
         result.current.enterEditMode();
       });
@@ -103,7 +103,7 @@ describe("useDraftLifecycle", () => {
       const updatedDraft = { ...FAKE_DRAFT, content: "更新後の内容" };
       mockEdit.mockResolvedValueOnce({ kind: "updated", draft: updatedDraft });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();
@@ -124,7 +124,7 @@ describe("useDraftLifecycle", () => {
       // 永遠に pending (解決されない)
       mockEdit.mockImplementation(() => new Promise<never>(() => undefined));
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();
@@ -142,7 +142,7 @@ describe("useDraftLifecycle", () => {
     it("draft_not_found: status=error と日本語エラーメッセージが設定される", async () => {
       mockEdit.mockResolvedValueOnce({ kind: "draft_not_found" });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();
@@ -162,7 +162,7 @@ describe("useDraftLifecycle", () => {
     it("validation_error: status=error と日本語エラーメッセージが設定される", async () => {
       mockEdit.mockResolvedValueOnce({ kind: "validation_error", fields: ["content"] });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();
@@ -180,7 +180,7 @@ describe("useDraftLifecycle", () => {
     it("error: status=error と汎用エラーメッセージが設定される", async () => {
       mockEdit.mockResolvedValueOnce({ kind: "error" });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();
@@ -196,7 +196,7 @@ describe("useDraftLifecycle", () => {
     });
 
     it("editContent が空白のみの場合は saveEdit が何もしない", async () => {
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();
@@ -216,9 +216,7 @@ describe("useDraftLifecycle", () => {
       mockEdit.mockResolvedValueOnce({ kind: "updated", draft: updatedDraft });
 
       const onDraftUpdated = vi.fn();
-      const { result } = renderHook(() =>
-        useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID, { onDraftUpdated })
-      );
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, { onDraftUpdated }));
 
       act(() => {
         result.current.enterEditMode();
@@ -238,7 +236,7 @@ describe("useDraftLifecycle", () => {
     it("成功時: mode=finalized になり final が設定される", async () => {
       mockFinalize.mockResolvedValueOnce({ kind: "finalized", final: FAKE_FINAL });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       await act(async () => {
         await result.current.approve();
@@ -253,7 +251,7 @@ describe("useDraftLifecycle", () => {
     it("approve 中は status が finalizing になる", async () => {
       mockFinalize.mockImplementation(() => new Promise<never>(() => undefined));
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         void result.current.approve();
@@ -265,7 +263,7 @@ describe("useDraftLifecycle", () => {
     it("draft_not_found: status=error と日本語エラーメッセージが設定される", async () => {
       mockFinalize.mockResolvedValueOnce({ kind: "draft_not_found" });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       await act(async () => {
         await result.current.approve();
@@ -278,7 +276,7 @@ describe("useDraftLifecycle", () => {
     it("encounter_already_finalized: status=error と適切なメッセージが設定される", async () => {
       mockFinalize.mockResolvedValueOnce({ kind: "encounter_already_finalized" });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       await act(async () => {
         await result.current.approve();
@@ -291,7 +289,7 @@ describe("useDraftLifecycle", () => {
     it("error: status=error と汎用エラーメッセージが設定される", async () => {
       mockFinalize.mockResolvedValueOnce({ kind: "error" });
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       await act(async () => {
         await result.current.approve();
@@ -302,7 +300,7 @@ describe("useDraftLifecycle", () => {
     });
 
     it("draft が null のとき approve は何もしない", async () => {
-      const { result } = renderHook(() => useDraftLifecycle(null, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(null));
 
       await act(async () => {
         await result.current.approve();
@@ -318,7 +316,7 @@ describe("useDraftLifecycle", () => {
       // 永遠に pending (解決されない)
       mockEdit.mockImplementation(() => new Promise<never>(() => undefined));
 
-      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID));
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT));
 
       act(() => {
         result.current.enterEditMode();

@@ -8,7 +8,7 @@
  *
  * 引数:
  *   draft           — useGenerateDraft が提供する現在の下書き (null のときは操作不可)
- *   clinicianId     — 臨床医 UUID (現時点ではプレースホルダー; 認証 Block で置き換える)
+ *   clinicianId は不要 — BE-012 以降は X-Clinician-Id ヘッダー経由で認証する
  *   onDraftUpdated  — saveEdit 成功時に呼ばれるコールバック。
  *                     呼び出し元 (ページ) がこれを gen.setDraft に繋ぐことで、
  *                     ページリフレッシュなしに AIIndicatedText が最新内容を表示できる。
@@ -76,12 +76,10 @@ function toErrorMessage(kind: string): string {
  * useDraftLifecycle フック。
  *
  * @param draft        現在の下書き (useGenerateDraft から渡す; null のときは操作不可)
- * @param clinicianId  臨床医 UUID
  * @param opts         オプション (onDraftUpdated など)
  */
 export function useDraftLifecycle(
   draft: RecordDraft | null,
-  clinicianId: string,
   opts?: UseDraftLifecycleOptions
 ): UseDraftLifecycleReturn {
   const [mode, setMode] = useState<DraftLifecycleMode>("view");
@@ -123,7 +121,7 @@ export function useDraftLifecycle(
     setError(null);
 
     try {
-      const result = await editRecordDraft(draft.id, editContent, clinicianId, {
+      const result = await editRecordDraft(draft.id, editContent, {
         signal: controller.signal,
       });
 
@@ -161,7 +159,7 @@ export function useDraftLifecycle(
       setStatus("error");
       setError(toErrorMessage("error"));
     }
-  }, [draft, editContent, clinicianId, opts]);
+  }, [draft, editContent, opts]);
 
   const approve = useCallback(async () => {
     if (draft === null) return;
@@ -175,7 +173,7 @@ export function useDraftLifecycle(
     setError(null);
 
     try {
-      const result = await finalizeRecordDraft(draft.id, clinicianId, {
+      const result = await finalizeRecordDraft(draft.id, {
         signal: controller.signal,
       });
 
@@ -215,7 +213,7 @@ export function useDraftLifecycle(
       setStatus("error");
       setError(toErrorMessage("error"));
     }
-  }, [draft, clinicianId]);
+  }, [draft]);
 
   return {
     mode,

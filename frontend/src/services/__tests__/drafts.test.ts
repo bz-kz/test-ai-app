@@ -66,37 +66,37 @@ describe("editRecordDraft", () => {
   it("成功時: kind=updated を返す", async () => {
     const updatedDraft = { ...FAKE_DRAFT, content: "更新後の内容" };
     mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: updatedDraft });
-    const result = await editRecordDraft(FAKE_DRAFT_ID, "更新後の内容", FAKE_CLINICIAN_ID);
+    const result = await editRecordDraft(FAKE_DRAFT_ID, "更新後の内容");
     expect(result).toEqual({ kind: "updated", draft: updatedDraft });
   });
 
   it("404: kind=draft_not_found を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "not_found" });
-    const result = await editRecordDraft(FAKE_DRAFT_ID, "内容", FAKE_CLINICIAN_ID);
+    const result = await editRecordDraft(FAKE_DRAFT_ID, "内容");
     expect(result).toEqual({ kind: "draft_not_found" });
   });
 
   it("422: kind=validation_error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "validation_error", fields: ["content"] });
-    const result = await editRecordDraft(FAKE_DRAFT_ID, "", FAKE_CLINICIAN_ID);
+    const result = await editRecordDraft(FAKE_DRAFT_ID, "");
     expect(result).toEqual({ kind: "validation_error", fields: ["content"] });
   });
 
   it("server_error: kind=error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
-    const result = await editRecordDraft(FAKE_DRAFT_ID, "内容", FAKE_CLINICIAN_ID);
+    const result = await editRecordDraft(FAKE_DRAFT_ID, "内容");
     expect(result).toEqual({ kind: "error" });
   });
 
   it("network_error: kind=error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
-    const result = await editRecordDraft(FAKE_DRAFT_ID, "内容", FAKE_CLINICIAN_ID);
+    const result = await editRecordDraft(FAKE_DRAFT_ID, "内容");
     expect(result).toEqual({ kind: "error" });
   });
 
   it("PATCH メソッドと正しいパスで apiFetch を呼び出す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_DRAFT });
-    await editRecordDraft(FAKE_DRAFT_ID, "内容", FAKE_CLINICIAN_ID);
+    await editRecordDraft(FAKE_DRAFT_ID, "内容");
     expect(mockApiFetch).toHaveBeenCalledWith(
       `/drafts/${FAKE_DRAFT_ID}`,
       expect.objectContaining({ method: "PATCH" })
@@ -111,13 +111,13 @@ describe("finalizeRecordDraft", () => {
 
   it("成功時: kind=finalized を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_FINAL });
-    const result = await finalizeRecordDraft(FAKE_DRAFT_ID, FAKE_CLINICIAN_ID);
+    const result = await finalizeRecordDraft(FAKE_DRAFT_ID);
     expect(result).toEqual({ kind: "finalized", final: FAKE_FINAL });
   });
 
   it("404: kind=draft_not_found を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "not_found" });
-    const result = await finalizeRecordDraft(FAKE_DRAFT_ID, FAKE_CLINICIAN_ID);
+    const result = await finalizeRecordDraft(FAKE_DRAFT_ID);
     expect(result).toEqual({ kind: "draft_not_found" });
   });
 
@@ -126,25 +126,25 @@ describe("finalizeRecordDraft", () => {
       kind: "server_error",
       code: "encounter_already_finalized",
     });
-    const result = await finalizeRecordDraft(FAKE_DRAFT_ID, FAKE_CLINICIAN_ID);
+    const result = await finalizeRecordDraft(FAKE_DRAFT_ID);
     expect(result).toEqual({ kind: "encounter_already_finalized" });
   });
 
   it("server_error (その他): kind=error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
-    const result = await finalizeRecordDraft(FAKE_DRAFT_ID, FAKE_CLINICIAN_ID);
+    const result = await finalizeRecordDraft(FAKE_DRAFT_ID);
     expect(result).toEqual({ kind: "error" });
   });
 
   it("network_error: kind=error を返す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
-    const result = await finalizeRecordDraft(FAKE_DRAFT_ID, FAKE_CLINICIAN_ID);
+    const result = await finalizeRecordDraft(FAKE_DRAFT_ID);
     expect(result).toEqual({ kind: "error" });
   });
 
   it("POST メソッドと正しいパスで apiFetch を呼び出す", async () => {
     mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_FINAL });
-    await finalizeRecordDraft(FAKE_DRAFT_ID, FAKE_CLINICIAN_ID);
+    await finalizeRecordDraft(FAKE_DRAFT_ID);
     expect(mockApiFetch).toHaveBeenCalledWith(
       `/drafts/${FAKE_DRAFT_ID}/finalize`,
       expect.objectContaining({ method: "POST" })

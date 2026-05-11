@@ -35,20 +35,21 @@ export type GetChainResult =
  *
  * @param finalId     訂正元確定カルテ UUID
  * @param content     訂正後の本文 (PHI) — ログに出力しない
- * @param clinicianId 臨床医 UUID
  * @param opts        AbortSignal など
+ *
+ * clinician_id は X-Clinician-Id ヘッダー経由で送信される (BE-012)。
+ * body 側で受け付けると backend Pydantic `extra="forbid"` で 422 になる。
  */
 export async function correctRecordFinal(
   finalId: string,
   content: string,
-  clinicianId: string,
   opts?: { signal?: AbortSignal }
 ): Promise<CorrectFinalResult> {
   const path = `/finals/${encodeURIComponent(finalId)}/correct`;
 
   const result = await apiFetch<RecordFinal>(path, {
     method: "POST",
-    body: JSON.stringify({ content, clinician_id: clinicianId }),
+    body: JSON.stringify({ content }),
     signal: opts?.signal,
   });
 
