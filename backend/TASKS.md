@@ -11,20 +11,20 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                         | Status      | Gates Touched              | Owner     |
-| ------- | ----------------------------- | ----------- | -------------------------- | --------- |
-| INF-001 | Runtime Topology              | done        | G0                         | Generator |
-| BE-001  | Inference Adapter             | done        | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints             | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints           | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation       | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize       | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes         | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment   | done        | G5 (primary), G6, G0       | Planner   |
-| BE-009  | List drafts for encounter     | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                         | Status | Gates Touched              | Owner     |
+| ------- | ----------------------------- | ------ | -------------------------- | --------- |
+| INF-001 | Runtime Topology              | done   | G0                         | Generator |
+| BE-001  | Inference Adapter             | done   | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints           | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment   | done   | G5 (primary), G6, G0       | Planner   |
+| BE-009  | List drafts for encounter     | qa     | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -408,4 +408,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; `content` returned in response body is the operational-read path per `.claude/rules/local-llm-and-phi.md` §4; no logger calls log content; error envelopes generic.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** infrastructure (repository +list_by_encounter), usecases (extend draft.py +di.py), interfaces (extend encounters router)
-- **Status:** in-progress
+- **Status:** qa
