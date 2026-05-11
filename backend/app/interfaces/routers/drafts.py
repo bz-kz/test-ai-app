@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.phi import short_id
 from app.interfaces.auth import get_current_clinician
 from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
@@ -221,7 +222,7 @@ async def post_draft_stream(
         _inference_error = exc
         logger.warning(
             "InferenceError at stream start encounter_id=%s: %s",
-            encounter_id,
+            short_id(encounter_id),
             exc.masked_context,
         )
     except StopAsyncIteration:
@@ -271,7 +272,7 @@ async def post_draft_stream(
                 # exc.masked_context には PHI マスク済みコンテキストが入っている
                 logger.warning(
                     "InferenceError mid-stream encounter_id=%s: %s",
-                    encounter_id,
+                    short_id(encounter_id),
                     exc.masked_context,
                 )
                 _msg = "Inference service is temporarily unavailable."
