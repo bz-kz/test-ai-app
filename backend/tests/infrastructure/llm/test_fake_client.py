@@ -39,7 +39,7 @@ async def test_fake_stream_yields_chunks() -> None:
     """stream() が Chunk を yield し、最終チャンクの done=True を確認する。"""
     client = FakeLocalLLMClient(fixture_map={"q": "answer"})
     chunks = []
-    async for chunk in await client.stream("q"):
+    async for chunk in client.stream("q"):
         chunks.append(chunk)
     assert len(chunks) == 2  # noqa: PLR2004 — テスト固有の定数
     assert chunks[0].text == "answer"
@@ -53,7 +53,7 @@ async def test_fake_stream_force_error() -> None:
     """force_error=True のとき stream も InferenceError を送出する。"""
     client = FakeLocalLLMClient(force_error=True)
     with pytest.raises(InferenceError):
-        async for _ in await client.stream("prompt"):
+        async for _ in client.stream("prompt"):
             pass
 
 

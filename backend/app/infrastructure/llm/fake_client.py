@@ -59,13 +59,6 @@ class FakeLocalLLMClient:
         params: GenerateParams | None = None,
     ) -> AsyncIterator[Chunk]:
         """フィクスチャテキストを単一チャンクとして返す非同期イテレータ。"""
-        return self._stream_impl(prompt, params)
-
-    async def _stream_impl(
-        self,
-        prompt: str,
-        params: GenerateParams | None = None,
-    ) -> AsyncIterator[Chunk]:
         self.stream_call_count += 1
         if self._force_error:
             raise InferenceError("forced error in FakeLocalLLMClient", raw_prompt=prompt)

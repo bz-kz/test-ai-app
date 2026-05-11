@@ -88,13 +88,6 @@ class OllamaLocalLLMClient:
 
         エンドツーエンドタイムアウトは timeout_s × 2 を上限とする。
         """
-        return self._stream_impl(prompt, params)
-
-    async def _stream_impl(
-        self,
-        prompt: str,
-        params: GenerateParams | None = None,
-    ) -> AsyncIterator[Chunk]:
         p = params or GenerateParams()
         payload: dict[str, object] = {
             "model": self._model,
