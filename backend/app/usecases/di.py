@@ -15,6 +15,9 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import Encounter, Patient, RecordDraft, RecordFinal
+from app.infrastructure.asr import make_asr_client
+from app.infrastructure.asr.client import LocalASRClient
+from app.infrastructure.asr.types import AudioPayload, TranscribeParams, TranscribeResponse
 from app.infrastructure.db.engine import get_session
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
@@ -46,6 +49,7 @@ from app.usecases.final import (
     list_finals_by_encounter,
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+from app.usecases.transcribe import transcribe_audio
 
 # ---------------------------------------------------------------------------
 # シングルトン LLM クライアント
@@ -54,6 +58,7 @@ from app.usecases.patient import create_patient, find_patient_by_id, find_patien
 # ---------------------------------------------------------------------------
 
 _llm_client_instance: LocalLLMClient | None = None
+_asr_client_instance: LocalASRClient | None = None
 
 
 def get_llm_client() -> LocalLLMClient:
@@ -67,6 +72,19 @@ def get_llm_client() -> LocalLLMClient:
         # 具体実装の生成は infrastructure 層のファクトリに委譲する
         _llm_client_instance = make_llm_client()
     return _llm_client_instance
+
+
+def get_asr_client() -> LocalASRClient:
+    """シングルトン ASR クライアントを返す FastAPI 依存関数 (BE-014)。
+
+    テスト時は app.dependency_overrides[get_asr_client] で FakeLocalASRClient に差し替える。
+    本番では infrastructure 層のファクトリが生成したクライアントをキャッシュして再利用する。
+    """
+    global _asr_client_instance  # noqa: PLW0603
+    if _asr_client_instance is None:
+        # 具体実装の生成は infrastructure 層のファクトリに委譲する
+        _asr_client_instance = make_asr_client()
+    return _asr_client_instance
 
 
 # ---------------------------------------------------------------------------
@@ -532,3 +550,47 @@ def make_find_chain_for_final(
         )
 
     return _find_chain
+
+
+# ---------------------------------------------------------------------------
+# 音声文字起こしユースケースファクトリ型エイリアス (BE-014)
+# ---------------------------------------------------------------------------
+
+TranscribeAudioCallable = Callable[
+    [AudioPayload, TranscribeParams | None, UUID, UUID],
+    Coroutine[Any, Any, TranscribeResponse],
+]
+
+
+# ---------------------------------------------------------------------------
+# 音声文字起こしユースケースファクトリ依存 (BE-014)
+# ---------------------------------------------------------------------------
+
+
+def make_transcribe_audio(
+    session: AsyncSession = Depends(_get_db_session),
+    asr: LocalASRClient = Depends(get_asr_client),
+) -> TranscribeAudioCallable:
+    """transcribe_audio ユースケースをセッション + ASR クライアント付きでクロージャとして返す。
+
+    ASR クライアントは get_asr_client 依存関数から取得するシングルトン。
+    テスト時は app.dependency_overrides[get_asr_client] で FakeLocalASRClient に差し替える。
+    """
+    encounter_repo = EncounterRepository(session)
+
+    async def _transcribe(
+        audio: AudioPayload,
+        params: TranscribeParams | None,
+        encounter_id: UUID,
+        clinician_id: UUID,
+    ) -> TranscribeResponse:
+        return await transcribe_audio(
+            audio=audio,
+            params=params,
+            encounter_id=encounter_id,
+            clinician_id=clinician_id,
+            asr=asr,
+            encounter_repo=encounter_repo,
+        )
+
+    return _transcribe

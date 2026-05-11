@@ -422,7 +422,7 @@ class TestMainEndpointsRegression:
         assert resp.json() == {"status": "ok"}
 
     def test_health_all_ok(self) -> None:
-        """Postgres と LLM が到達可能なとき 200 を返す (モック使用)。"""
+        """Postgres と LLM と ASR が到達可能なとき 200 を返す (モック使用, BE-014)。"""
         from main import app as main_app
 
         # asyncpg.connect は asyncpg のモジュールに直接パッチする
@@ -437,6 +437,11 @@ class TestMainEndpointsRegression:
                 new_callable=AsyncMock,
                 return_value=True,
             ),
+            patch(
+                "app.infrastructure.asr.whisper_cpp_client.WhisperCppLocalASRClient.ping",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
         ):
             client = TestClient(main_app, raise_server_exceptions=False)
             resp = client.get("/health")
@@ -444,3 +449,4 @@ class TestMainEndpointsRegression:
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "ok"
+        assert body["asr"] is True

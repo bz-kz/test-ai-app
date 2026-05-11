@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.infrastructure.asr.whisper_cpp_client import WhisperCppLocalASRClient
 from app.infrastructure.llm import InferenceError, OllamaLocalLLMClient
 from app.interfaces.exception_handlers import (
     http_exception_handler,
@@ -21,6 +22,7 @@ from app.interfaces.routers.drafts import router as drafts_router
 from app.interfaces.routers.encounters import router as encounters_router
 from app.interfaces.routers.finals import router as finals_router
 from app.interfaces.routers.patients import router as patients_router
+from app.interfaces.routers.transcribe import router as transcribe_router
 from app.interfaces.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,7 @@ app.add_exception_handler(
 )
 # InferenceError は Exception のサブクラスなので unhandled_exception_handler より先に登録する
 app.add_exception_handler(InferenceError, inference_error_handler)  # type: ignore[arg-type]
+# ASRError はルーター内で 503/504 に変換するためグローバルハンドラには登録しない
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # ---------------------------------------------------------------------------
@@ -68,6 +71,7 @@ app.include_router(patients_router, prefix="")
 app.include_router(encounters_router, prefix="")
 app.include_router(drafts_router, prefix="")
 app.include_router(finals_router, prefix="")
+app.include_router(transcribe_router, prefix="")
 
 # ---------------------------------------------------------------------------
 # 既存エンドポイント: /ping, /health
@@ -82,6 +86,7 @@ class HealthResponse(BaseModel):
     status: str
     postgres: bool
     llm: bool
+    asr: bool
 
 
 @app.get("/ping", response_model=PingResponse)
@@ -96,11 +101,12 @@ async def ping() -> PingResponse:
     responses={503: {"model": ErrorResponse, "description": "サービス劣化状態"}},
 )
 async def health() -> Response:
-    """Postgres と llm が両方到達可能なときのみ 200 を返す。"""
+    """Postgres と llm と asr が全て到達可能なときのみ 200 を返す (BE-014)。"""
     database_url = os.getenv("DATABASE_URL", "")
 
     postgres_ok = False
     llm_ok = False
+    asr_ok = False
 
     # Postgres 疎通確認: asyncpg で軽量接続テスト
     try:
@@ -118,12 +124,17 @@ async def health() -> Response:
     llm_client = OllamaLocalLLMClient()
     llm_ok = await llm_client.ping()
 
-    all_ok = postgres_ok and llm_ok
+    # ASR 疎通確認: インフラ層の ping() を経由して直接 httpx は使わない
+    asr_client = WhisperCppLocalASRClient()
+    asr_ok = await asr_client.ping()
+
+    all_ok = postgres_ok and llm_ok and asr_ok
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content=HealthResponse(
             status="ok" if all_ok else "degraded",
             postgres=postgres_ok,
             llm=llm_ok,
+            asr=asr_ok,
         ).model_dump(),
     )

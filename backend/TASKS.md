@@ -11,25 +11,26 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                           | Status | Gates Touched              | Owner     |
-| ------- | ------------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology                | done   | G0                         | Generator |
-| BE-001  | Inference Adapter               | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation         | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize         | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes           | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment     | done   | G5 (primary), G6, G0       | Planner   |
-| BE-009  | List drafts for encounter       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-010  | Security hardening bundle       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-011  | INFO-level UUID hardening sweep | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-012  | X-Clinician-Id header auth      | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-013  | Streaming draft endpoint        | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| INF-004 | ASR compose service             | done   | G0, G4, G5, G6, G7         | Generator |
+| ID      | Title                             | Status | Gates Touched                  | Owner     |
+| ------- | --------------------------------- | ------ | ------------------------------ | --------- |
+| INF-001 | Runtime Topology                  | done   | G0                             | Generator |
+| BE-001  | Inference Adapter                 | done   | G1, G2, G3, G4, G5, G7         | Generator |
+| BE-002  | Persistence                       | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-003  | API Surface                       | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-004  | Patient endpoints                 | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-005  | Encounter endpoints               | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-006  | Record Draft generation           | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| BE-007  | Draft edit and finalize           | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-002 | Integration gap fixes             | done   | G0, G1, G2, G3, G4, G6, G7     | Generator |
+| BE-008  | Record Final correction chain     | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-003 | LLM memory budget alignment       | done   | G5 (primary), G6, G0           | Planner   |
+| BE-009  | List drafts for encounter         | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-010  | Security hardening bundle         | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-011  | INFO-level UUID hardening sweep   | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-012  | X-Clinician-Id header auth        | done   | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-013  | Streaming draft endpoint          | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| INF-004 | ASR compose service               | done   | G0, G4, G5, G6, G7             | Generator |
+| BE-014  | ASR adapter + transcribe endpoint | qa     | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -576,4 +577,41 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; audio = PHI per ADR-0001 + rule §3; no PHI flows in this Block (compose-only, no audio processed).
 - **Gates Touched:** G0, G4, G5, G6, G7
 - **Affected Layers:** infrastructure (compose only), docs/runbook
+- **Status:** qa
+
+---
+
+## ASR Adapter and Transcribe Endpoint (BE-014)
+
+- **Goal:** Implement `POST /encounters/{encounter_id}/transcribe` end-to-end: `LocalASRClient` Protocol + `WhisperCppLocalASRClient` concrete + `FakeLocalASRClient` test double under `app/infrastructure/asr/`, `transcribe_audio` usecase, DI factory, router, and full unit tests. Audio = PHI; never logged, never persisted.
+- **Inputs:**
+  - backend/SPEC.md#asr-adapter
+  - backend/SPEC.md#transcribe-endpoint
+  - SPEC.md#asr-layer-contract
+  - docs/adr/0001-voice-input-and-local-asr.md
+  - .claude/rules/local-llm-and-phi.md §1 §2 §3
+- **Acceptance:**
+  - [x] `app/infrastructure/asr/__init__.py` exports `LocalASRClient`, `WhisperCppLocalASRClient`, `FakeLocalASRClient`, `ASRError`, `ASR_BASE_URL`, `ASR_MODEL`, `ASR_TIMEOUT_S`, `make_asr_client()`
+  - [x] `app/infrastructure/asr/config.py` reads env vars with defaults (`http://asr:8080`, `ggml-medium-q5_0.bin`, `90`)
+  - [x] `app/infrastructure/asr/client.py` defines `LocalASRClient` Protocol with `transcribe(audio, params) -> TranscribeResponse` and `ping() -> bool`
+  - [x] `app/infrastructure/asr/whisper_cpp_client.py` POSTs multipart to `/inference`, raises `ASRError` on timeout/non-2xx/network error, does not log audio bytes
+  - [x] `app/infrastructure/asr/fake_client.py` returns fixed synthetic Japanese string; fixture_map keyed by sha256(bytes)[:16]
+  - [x] `app/infrastructure/asr/errors.py` `ASRError` with masked context; no audio bytes in `__str__`/`__repr__`
+  - [x] `app/usecases/transcribe.py` `transcribe_audio(...)`: validates encounter, calls ASR, returns transcript. No DB writes, no audit rows.
+  - [x] `app/usecases/di.py` adds `get_asr_client()`, `make_transcribe_audio()`, `TranscribeAudioCallable`
+  - [x] `app/interfaces/routers/transcribe.py` `POST /encounters/{encounter_id}/transcribe`: multipart, 2MB cap, audio/webm content-type check, 503/504/404/415/422 error mapping
+  - [x] `main.py` wires transcribe_router; health endpoint adds `asr` field; /health returns 200 iff postgres+llm+asr all reachable
+  - [x] `python-multipart==0.0.20` added to requirements.txt (required for UploadFile/multipart)
+  - [x] Tests: `tests/infrastructure/asr/test_whisper_cpp_client.py` (9 tests), `tests/infrastructure/asr/test_fake_client.py` (8 tests), `tests/usecases/test_transcribe.py` (5 tests), `tests/interfaces/test_transcribe_router.py` (9 tests); existing health tests updated to mock ASR ping
+  - [x] Layer rule: `grep -RnE '^from app\.infrastructure\.asr' backend/app/interfaces/` → 0 hits
+  - [x] G0 green: 5 services healthy; `/health` returns `{"status":"ok","postgres":true,"llm":true,"asr":true}`; `POST /encounters/unknown/transcribe` → 404 (endpoint live)
+  - [x] G1 pyright 0 errors; G2 ruff clean; G3 pytest 266 passed (was 208; +58 new)
+  - [x] G4 security: no hosted-ASR SDKs; no direct ASR calls outside infra; no audio in logs; no persistence; X-Clinician-Id required
+  - [x] G5 cost: ASR_TIMEOUT_S=90; 2MB cap; no audio persistence; co-resident 13GiB budget in runbook
+- **Out-of-scope:** Frontend (FE-009). Audio persistence / audit row. Streaming transcription. Multi-speaker / diarization. kotoba-whisper swap.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; whisper.cpp medium-q5_0; ASR_TIMEOUT_S=90; co-resident with gemma4:e4b.
+- **Data Sensitivity:** PHI; audio bytes and transcript are PHI; never logged at INFO; never persisted.
+- **Gates Touched:** G0, G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** infrastructure (new asr/), usecases (transcribe.py + di.py), interfaces (new router, main.py health)
 - **Status:** qa
