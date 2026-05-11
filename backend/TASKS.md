@@ -17,6 +17,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-001  | Inference Adapter | done   | G1, G2, G3, G4, G5, G7 | Generator |
 | BE-002  | Persistence       | done   | G1, G2, G3, G4, G6, G7 | Generator |
 | BE-003  | API Surface       | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-004  | Patient endpoints | qa     | G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -140,3 +141,35 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** interfaces
 - **Status:** done
+
+---
+
+## Patient endpoints (BE-004)
+
+- **Goal:** Deliver the first feature surface — create a patient and look them up — using the existing `PatientRepository`, `AuditLogRepository`, and `app/interfaces/exception_handlers.py`. Three endpoints: POST `/patients` to create (with audit log), GET `/patients/{id}` to fetch by UUID, GET `/patients` with required query `?mrn=<value>` to fetch by MRN. All PHI fields handled per `.claude/rules/local-llm-and-phi.md`.
+- **Inputs:**
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#layer-boundaries — DDD direction
+  - backend/SPEC.md#persistence — PatientRepository, AuditLogRepository, ORM models
+  - SPEC.md#domain-glossary — canonical identifiers (`patient`, `mrn`)
+  - .claude/rules/local-llm-and-phi.md — PHI in prompts/logs/storage
+  - backend/app/domain/entities.py — `Patient`, `AuditAction.PATIENT_CREATE`
+  - backend/app/infrastructure/db/repositories.py — `PatientRepository.add/find_by_id/find_by_mrn`, `AuditLogRepository.append`
+  - backend/app/interfaces/exception_handlers.py — existing `{code, message}` envelope and `ErrorResponse`
+  - backend/main.py — currently mounts no feature routers
+- **Acceptance:**
+  - [ ] Usecases: `app/usecases/patient.py` exports `create_patient`, `find_patient_by_id`, `find_patient_by_mrn`; orchestrate repos; own UUID/timestamp generation; no raw SQL; no imports from `interfaces`.
+  - [ ] Router: `app/interfaces/routers/patients.py` exposes POST `/patients` (201), GET `/patients/{patient_id}` (200/404), GET `/patients?mrn=` (200/404); mounted in `main.py`.
+  - [ ] Pydantic models: `PatientCreate` (mrn, family_name, given_name, date_of_birth) and `PatientRead` (+ id, created_at).
+  - [ ] PHI: mrn/family_name/given_name/date_of_birth masked via `mask_phi` before any logger call; error messages MUST NOT echo PHI values.
+  - [ ] Audit log: `create_patient` writes one `AuditLog` with `AuditAction.PATIENT_CREATE` in same transaction; placeholder clinician UUID constant `_PLACEHOLDER_CLINICIAN_ID`.
+  - [ ] DI: `get_session` from engine.py; repos constructed in router and passed into usecases.
+  - [ ] Unit tests: `tests/usecases/test_patient.py` and `tests/interfaces/test_patients_router.py` per spec.
+  - [ ] `response_model=PatientRead` on every endpoint; OpenAPI enriched with 404/409 error models.
+- **Out-of-scope:** Patient update/delete, list/pagination, soft delete, fuzzy MRN match, auth, encounter/draft/final endpoints, migration changes.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; mrn/family_name/given_name/date_of_birth masked before any logger call; error messages MUST NOT echo PHI values.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** usecases (new), interfaces (new router)
+- **Status:** qa

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+from typing import cast
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
@@ -57,19 +58,29 @@ async def http_exception_handler(
 ) -> JSONResponse:
     """HTTPException を正規化エンベロープに変換する。
 
-    exc.detail が文字列以外の場合は型名のみを `message` に使い、
-    PHI が detail に混入する経路を遮断する。
+    exc.detail が {"code": str, "message": str} 形式の dict の場合は
+    そのまま使用する (機能エンドポイントが特定の code を返すために使う)。
+    文字列の場合は PHI 混入を防ぐため mask_phi を通す。
+    それ以外の型の場合はステータスコードのみを返す。
     """
-    if isinstance(exc.detail, str):
+    detail: object = exc.detail
+    if isinstance(detail, dict) and "code" in detail and "message" in detail:
+        # 機能エンドポイントが明示的に渡した PHI-safe なエンベロープをそのまま使う
+        _d = cast(dict[str, object], detail)
+        safe_code = str(_d["code"])
+        safe_message = str(_d["message"])
+    elif isinstance(detail, str):
         # detail 文字列は開発者が書いた固定テキストを想定するが、
         # PHI 混入を防ぐため mask_phi を通す
-        safe_message = mask_phi(exc.detail) if len(exc.detail) > 64 else exc.detail
+        safe_code = _http_code_to_identifier(exc.status_code)
+        safe_message = mask_phi(detail) if len(detail) > 64 else detail
     else:
         # オブジェクトや dict が渡された場合は型名だけ返す
+        safe_code = _http_code_to_identifier(exc.status_code)
         safe_message = f"HTTP {exc.status_code}"
 
     body = ErrorResponse(
-        code=_http_code_to_identifier(exc.status_code),
+        code=safe_code,
         message=safe_message,
     )
     logger.warning(

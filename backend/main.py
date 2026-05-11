@@ -15,6 +15,7 @@ from app.interfaces.exception_handlers import (
     request_validation_exception_handler,
     unhandled_exception_handler,
 )
+from app.interfaces.routers.patients import router as patients_router
 from app.interfaces.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,11 @@ app.add_exception_handler(
 )
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
+# ---------------------------------------------------------------------------
+# 機能ルーター登録
+# ---------------------------------------------------------------------------
+
+app.include_router(patients_router, prefix="")
 
 # ---------------------------------------------------------------------------
 # 既存エンドポイント: /ping, /health

@@ -5,7 +5,9 @@ src = [".", "app"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = []
+ignore = [
+    "B008",  # FastAPI の Depends() をデフォルト引数で使うのは公式パターンであり誤検知
+]
 
 [tool.pyright]
 pythonVersion = "3.12"
