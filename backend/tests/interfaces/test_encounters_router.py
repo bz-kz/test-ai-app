@@ -11,6 +11,10 @@ BE-005 Acceptance:
   (g) GET  /patients/{id}/encounters 200 — 複数、encountered_at 降順
   (h) GET  /patients/{id}/encounters 404 — 存在しない患者
   (i) エラーメッセージに UUID が含まれない
+BE-008 Acceptance:
+  (j) GET  /encounters/{id}/finals 200 — 空リスト (確定なし)
+  (k) GET  /encounters/{id}/finals 200 — シード後に確定リスト返す
+  (l) GET  /encounters/{id}/finals 200 — 未知 encounter_id でも 404 ではなく空リスト
 
 DI 方針:
   ルーターはユースケースファクトリ依存を使うため、
@@ -39,26 +43,48 @@ from app.infrastructure.db.repositories import (
     AuditLogRepository,
     EncounterRepository,
     PatientRepository,
+    RecordDraftRepository,
+    RecordFinalRepository,
 )
+from app.infrastructure.llm.fake_client import FakeLocalLLMClient
 from app.interfaces.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
     unhandled_exception_handler,
 )
+from app.interfaces.routers.drafts import router as drafts_router
 from app.interfaces.routers.encounters import router as encounters_router
+from app.interfaces.routers.finals import router as finals_router
 from app.interfaces.routers.patients import router as patients_router
 from app.usecases.di import (
+    get_llm_client,
+    make_correct_record_final,
     make_create_encounter,
     make_create_patient,
+    make_edit_record_draft,
+    make_finalize_draft_to_record_final,
+    make_find_chain_for_final,
+    make_find_draft_by_id,
     make_find_encounter_by_id,
+    make_find_final_by_id,
     make_find_patient_by_id,
     make_find_patient_by_mrn,
+    make_generate_record_draft,
     make_list_encounters_by_patient,
+    make_list_finals_by_encounter,
 )
+from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
     list_encounters_by_patient,
+)
+from app.usecases.final import (
+    correct_record_final,
+    finalize_draft_to_record_final,
+    find_chain_for_final,
+    find_final_by_id,
+    list_finals_by_encounter,
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
 
@@ -67,9 +93,11 @@ from app.usecases.patient import create_patient, find_patient_by_id, find_patien
 # ---------------------------------------------------------------------------
 
 
-def _make_test_app(session: AsyncSession) -> FastAPI:
+def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient | None = None) -> FastAPI:
     """インメモリ DB セッションをユースケースファクトリ DI に差し込んだ
     テスト用 FastAPI を生成する。"""
+
+    _llm = llm or FakeLocalLLMClient()
 
     # 受診ファクトリの override
     def _override_make_create_encounter():  # type: ignore[no-untyped-def]
@@ -157,6 +185,112 @@ def _make_test_app(session: AsyncSession) -> FastAPI:
 
         return _find
 
+    def _override_make_generate_record_draft():  # type: ignore[no-untyped-def]
+        encounter_repo = EncounterRepository(session)
+        draft_repo = RecordDraftRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _generate(clinical_input, encounter_id):  # type: ignore[no-untyped-def]
+            draft = await generate_record_draft(
+                clinical_input=clinical_input,
+                encounter_id=encounter_id,
+                llm=_llm,
+                encounter_repo=encounter_repo,
+                draft_repo=draft_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return draft
+
+        return _generate
+
+    def _override_make_finalize_draft_to_record_final():  # type: ignore[no-untyped-def]
+        draft_repo = RecordDraftRepository(session)
+        final_repo = RecordFinalRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _finalize(draft_id, clinician_id):  # type: ignore[no-untyped-def]
+            final = await finalize_draft_to_record_final(
+                draft_id=draft_id,
+                clinician_id=clinician_id,
+                draft_repo=draft_repo,
+                final_repo=final_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return final
+
+        return _finalize
+
+    def _override_make_find_draft_by_id():  # type: ignore[no-untyped-def]
+        draft_repo = RecordDraftRepository(session)
+
+        async def _find(draft_id):  # type: ignore[no-untyped-def]
+            return await find_draft_by_id(draft_id=draft_id, draft_repo=draft_repo)
+
+        return _find
+
+    def _override_make_edit_record_draft():  # type: ignore[no-untyped-def]
+        draft_repo = RecordDraftRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _edit(draft_id, content, clinician_id):  # type: ignore[no-untyped-def]
+            draft = await edit_record_draft(
+                draft_id=draft_id,
+                content=content,
+                clinician_id=clinician_id,
+                draft_repo=draft_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return draft
+
+        return _edit
+
+    def _override_make_find_final_by_id():  # type: ignore[no-untyped-def]
+        final_repo = RecordFinalRepository(session)
+
+        async def _find(final_id):  # type: ignore[no-untyped-def]
+            return await find_final_by_id(final_id=final_id, final_repo=final_repo)
+
+        return _find
+
+    def _override_make_correct_record_final():  # type: ignore[no-untyped-def]
+        final_repo = RecordFinalRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _correct(source_final_id, content, clinician_id):  # type: ignore[no-untyped-def]
+            new_final = await correct_record_final(
+                source_final_id=source_final_id,
+                content=content,
+                clinician_id=clinician_id,
+                final_repo=final_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return new_final
+
+        return _correct
+
+    def _override_make_find_chain_for_final():  # type: ignore[no-untyped-def]
+        final_repo = RecordFinalRepository(session)
+
+        async def _find_chain(final_id):  # type: ignore[no-untyped-def]
+            return await find_chain_for_final(final_id=final_id, final_repo=final_repo)
+
+        return _find_chain
+
+    def _override_make_list_finals_by_encounter():  # type: ignore[no-untyped-def]
+        final_repo = RecordFinalRepository(session)
+
+        async def _list(encounter_id):  # type: ignore[no-untyped-def]
+            return await list_finals_by_encounter(
+                encounter_id=encounter_id,
+                final_repo=final_repo,
+            )
+
+        return _list
+
     test_app = FastAPI()
     test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     test_app.add_exception_handler(
@@ -166,6 +300,8 @@ def _make_test_app(session: AsyncSession) -> FastAPI:
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(patients_router, prefix="")
     test_app.include_router(encounters_router, prefix="")
+    test_app.include_router(drafts_router, prefix="")
+    test_app.include_router(finals_router, prefix="")
     test_app.dependency_overrides[make_create_encounter] = _override_make_create_encounter
     test_app.dependency_overrides[make_find_encounter_by_id] = _override_make_find_encounter_by_id
     test_app.dependency_overrides[make_list_encounters_by_patient] = (
@@ -174,6 +310,19 @@ def _make_test_app(session: AsyncSession) -> FastAPI:
     test_app.dependency_overrides[make_create_patient] = _override_make_create_patient
     test_app.dependency_overrides[make_find_patient_by_id] = _override_make_find_patient_by_id
     test_app.dependency_overrides[make_find_patient_by_mrn] = _override_make_find_patient_by_mrn
+    test_app.dependency_overrides[make_generate_record_draft] = _override_make_generate_record_draft
+    test_app.dependency_overrides[make_find_draft_by_id] = _override_make_find_draft_by_id
+    test_app.dependency_overrides[make_edit_record_draft] = _override_make_edit_record_draft
+    test_app.dependency_overrides[make_finalize_draft_to_record_final] = (
+        _override_make_finalize_draft_to_record_final
+    )
+    test_app.dependency_overrides[make_find_final_by_id] = _override_make_find_final_by_id
+    test_app.dependency_overrides[make_correct_record_final] = _override_make_correct_record_final
+    test_app.dependency_overrides[make_find_chain_for_final] = _override_make_find_chain_for_final
+    test_app.dependency_overrides[make_list_finals_by_encounter] = (
+        _override_make_list_finals_by_encounter
+    )
+    test_app.dependency_overrides[get_llm_client] = lambda: _llm
     return test_app
 
 
@@ -410,3 +559,57 @@ class TestGetEncountersByPatient:
         assert resp.status_code == 404
         body = resp.json()
         assert missing_id not in body.get("message", "")
+
+
+# ---------------------------------------------------------------------------
+# (j) GET /encounters/{id}/finals — 空リスト
+# (k) GET /encounters/{id}/finals — シード後に確定リスト返す
+# (l) GET /encounters/{id}/finals — 未知 encounter_id でも 200 空リスト
+# ---------------------------------------------------------------------------
+
+
+class TestGetFinalsByEncounter:
+    def test_200_empty_list_when_no_finals(self, client: TestClient) -> None:
+        """確定カルテがない受診は空リストを返す (404 ではない)。"""
+        patient_id = _create_patient(client, mrn="MRN-FINALS-ENC-001").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        resp = client.get(f"/encounters/{encounter_id}/finals")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_200_returns_finals_after_seeding(self, client: TestClient) -> None:
+        """確定カルテを作成した後、一覧に含まれる。"""
+        patient_id = _create_patient(client, mrn="MRN-FINALS-ENC-002").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        # 下書き生成 → 確定
+        draft_resp = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "テスト入力"},
+        )
+        assert draft_resp.status_code == 201
+        draft_id = draft_resp.json()["id"]
+
+        finalize_resp = client.post(
+            f"/drafts/{draft_id}/finalize",
+            json={"clinician_id": str(uuid4())},
+        )
+        assert finalize_resp.status_code == 201
+        final_id = finalize_resp.json()["id"]
+
+        resp = client.get(f"/encounters/{encounter_id}/finals")
+
+        assert resp.status_code == 200
+        bodies = resp.json()
+        assert len(bodies) == 1
+        assert bodies[0]["id"] == final_id
+        assert bodies[0]["encounter_id"] == encounter_id
+
+    def test_200_empty_list_on_unknown_encounter(self, client: TestClient) -> None:
+        """未知 encounter_id でも 404 ではなく空リストを返す (ユースケース仕様)。"""
+        resp = client.get(f"/encounters/{uuid4()}/finals")
+
+        assert resp.status_code == 200
+        assert resp.json() == []

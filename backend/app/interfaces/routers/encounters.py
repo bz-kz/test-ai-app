@@ -3,6 +3,7 @@
 POST /encounters                          — 受診作成 (create_encounter ユースケース呼び出し)
 GET  /encounters/{encounter_id}           — UUID による受診取得
 GET  /patients/{patient_id}/encounters   — 患者に紐づく受診一覧
+GET  /encounters/{encounter_id}/finals   — 受診に紐づく確定カルテ一覧 (BE-008)
 
 PHI ルール:
   - encounter と patient の紐づきは PHI (local-llm-and-phi.md §3)。
@@ -23,14 +24,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
     CreateEncounterCallable,
     FindEncounterByIdCallable,
     ListEncountersByPatientCallable,
+    ListFinalsByEncounterCallable,
     make_create_encounter,
     make_find_encounter_by_id,
     make_list_encounters_by_patient,
+    make_list_finals_by_encounter,
 )
 from app.usecases.errors import EncounterNotFound, PatientNotFound
 
@@ -184,4 +188,34 @@ async def get_encounters_by_patient(
             created_at=e.created_at,
         )
         for e in encounters
+    ]
+
+
+@router.get(
+    "/encounters/{encounter_id}/finals",
+    response_model=list[FinalRead],
+    summary="受診の確定カルテ一覧",
+)
+async def get_finals_by_encounter(
+    encounter_id: UUID,
+    list_finals: ListFinalsByEncounterCallable = Depends(make_list_finals_by_encounter),
+) -> list[FinalRead]:
+    """受診 ID に紐づく全確定カルテを created_at 昇順で返す (BE-008)。
+
+    確定カルテが存在しない場合は空リストを返す (404 ではない)。
+    受診が存在しない場合も空リストを返す — 受診の存在確認はスコープ外。
+    UUID はエラーメッセージに含めない。
+    """
+    finals = await list_finals(encounter_id)
+    return [
+        FinalRead(
+            id=f.id,
+            encounter_id=f.encounter_id,
+            content=f.content,
+            confidence=f.confidence,
+            clinician_id=f.clinician_id,
+            predecessor_id=f.predecessor_id,
+            created_at=f.created_at,
+        )
+        for f in finals
     ]

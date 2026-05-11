@@ -11,17 +11,18 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                   | Status | Gates Touched              | Owner     |
-| ------- | ----------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology        | done   | G0                         | Generator |
-| BE-001  | Inference Adapter       | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes   | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| ID      | Title                         | Status | Gates Touched              | Owner     |
+| ------- | ----------------------------- | ------ | -------------------------- | --------- |
+| INF-001 | Runtime Topology              | done   | G0                         | Generator |
+| BE-001  | Inference Adapter             | done   | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints           | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain | qa     | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -312,3 +313,41 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G0, G1, G2, G3, G4, G6, G7
 - **Affected Layers:** infrastructure (db models + migrations + alembic env), interfaces (CORS middleware in main.py)
 - **Status:** done
+
+---
+
+## Record Final correction chain (BE-008)
+
+- **Goal:** Add the clinical correction flow on top of BE-007's immutable record_final. Three new endpoints + legacy cleanup. BE-007's `finalize_draft_to_record_final` semantics are unchanged.
+- **Inputs:**
+  - backend/SPEC.md#persistence — record_final immutable; corrections are new rows referencing predecessors
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#layer-boundaries — DDD direction (router → usecase-DI seam → infra → domain)
+  - SPEC.md#domain-glossary — `record_final` 確定カルテ, `predecessor_id` for correction lineage
+  - .claude/rules/local-llm-and-phi.md §3 — content is PHI; mask in logs; no PHI in error envelopes
+  - backend/app/domain/entities.py — `RecordFinal.predecessor_id: UUID | None`; `AuditAction.FINAL_CORRECT`
+  - backend/app/infrastructure/db/repositories.py — `RecordFinalRepository`
+  - backend/app/usecases/final.py (BE-007) — extended with correction usecases
+  - backend/app/usecases/record_finalization.py (legacy) — removed; superseded by BE-007 + BE-008
+  - backend/app/interfaces/routers/finals.py (BE-007) — extended with POST correct + GET chain
+- **Acceptance:**
+  - [x] `correct_record_final` usecase: loads source, builds new RecordFinal(predecessor_id=source.id, confidence=None), adds to repo, writes FINAL_CORRECT audit with meta_json="{}"
+  - [x] `list_finals_by_encounter` usecase: returns full list ordered by created_at ASC; empty list on no finals
+  - [x] `find_chain_for_final` usecase: wraps find_chain; raises FinalNotFound if empty
+  - [x] `RecordFinalRepository.list_by_encounter` added; find_by_encounter (BE-007 guard) unchanged
+  - [x] DI: `make_correct_record_final`, `make_list_finals_by_encounter`, `make_find_chain_for_final` in di.py
+  - [x] POST `/finals/{final_id}/correct` — 201 FinalRead; 404 final_not_found; 422 on empty/extra
+  - [x] GET `/finals/{final_id}/chain` — list[FinalRead] oldest→newest; 404 on missing
+  - [x] GET `/encounters/{encounter_id}/finals` — list[FinalRead] created_at ASC; 200 empty on no finals or unknown encounter
+  - [x] Layer rule: `grep -RnE '^from app\.infrastructure' backend/app/interfaces/routers/{finals.py,encounters.py}` → 0 hits
+  - [x] Legacy `record_finalization.py` and `test_record_finalization.py` removed; 0 references remain
+  - [x] All logger calls log UUIDs only — no content logged; meta_json="{}" for FINAL_CORRECT
+  - [x] Tests: usecases/test_final.py, interfaces/test_finals_router.py, interfaces/test_encounters_router.py extended
+  - [x] G1 pyright 0 errors, G2 ruff clean, G3 pytest 184 pass (24 new tests)
+- **Out-of-scope:** Frontend correction UI, auth/authorization, soft-delete of superseded finals, cross-encounter merging, confidence recomputation on correction
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; `content` is free-text clinical narrative; masked before any logger call; never in error envelopes; `meta_json="{}"` for FINAL_CORRECT (predecessor lives on the row)
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** usecases (extend), interfaces (extend finals + encounters routers); infrastructure (one read-only method on RecordFinalRepository)
+- **Status:** qa

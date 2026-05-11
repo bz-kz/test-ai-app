@@ -31,7 +31,13 @@ from app.usecases.encounter import (
     find_encounter_by_id,
     list_encounters_by_patient,
 )
-from app.usecases.final import finalize_draft_to_record_final, find_final_by_id
+from app.usecases.final import (
+    correct_record_final,
+    finalize_draft_to_record_final,
+    find_chain_for_final,
+    find_final_by_id,
+    list_finals_by_encounter,
+)
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
 
 # ---------------------------------------------------------------------------
@@ -321,6 +327,21 @@ FindFinalByIdCallable = Callable[
     Coroutine[Any, Any, RecordFinal],
 ]
 
+CorrectRecordFinalCallable = Callable[
+    [UUID, str, UUID],
+    Coroutine[Any, Any, RecordFinal],
+]
+
+ListFinalsByEncounterCallable = Callable[
+    [UUID],
+    Coroutine[Any, Any, list[RecordFinal]],
+]
+
+FindChainForFinalCallable = Callable[
+    [UUID],
+    Coroutine[Any, Any, list[RecordFinal]],
+]
+
 
 # ---------------------------------------------------------------------------
 # 下書き編集ユースケースファクトリ依存
@@ -388,3 +409,54 @@ def make_find_final_by_id(
         )
 
     return _find
+
+
+def make_correct_record_final(
+    session: AsyncSession = Depends(_get_db_session),
+) -> CorrectRecordFinalCallable:
+    """correct_record_final ユースケースをセッション付きでクロージャとして返す (BE-008)。"""
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    async def _correct(source_final_id: UUID, content: str, clinician_id: UUID) -> RecordFinal:
+        new_final = await correct_record_final(
+            source_final_id=source_final_id,
+            content=content,
+            clinician_id=clinician_id,
+            final_repo=final_repo,
+            audit_repo=audit_repo,
+        )
+        await session.commit()
+        return new_final
+
+    return _correct
+
+
+def make_list_finals_by_encounter(
+    session: AsyncSession = Depends(_get_db_session),
+) -> ListFinalsByEncounterCallable:
+    """list_finals_by_encounter ユースケースをセッション付きでクロージャとして返す (BE-008)。"""
+    final_repo = RecordFinalRepository(session)
+
+    async def _list(encounter_id: UUID) -> list[RecordFinal]:
+        return await list_finals_by_encounter(
+            encounter_id=encounter_id,
+            final_repo=final_repo,
+        )
+
+    return _list
+
+
+def make_find_chain_for_final(
+    session: AsyncSession = Depends(_get_db_session),
+) -> FindChainForFinalCallable:
+    """find_chain_for_final ユースケースをセッション付きでクロージャとして返す (BE-008)。"""
+    final_repo = RecordFinalRepository(session)
+
+    async def _find_chain(final_id: UUID) -> list[RecordFinal]:
+        return await find_chain_for_final(
+            final_id=final_id,
+            final_repo=final_repo,
+        )
+
+    return _find_chain

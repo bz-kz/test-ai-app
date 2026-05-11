@@ -1,4 +1,4 @@
-"""確定カルテユースケースのユニットテスト (BE-007)。
+"""確定カルテユースケースのユニットテスト (BE-007, BE-008)。
 
 インメモリ SQLite を使い、Postgres なしで実行できる。
 
@@ -9,6 +9,12 @@ Acceptance:
   (c) finalize_draft_to_record_final — 二重確定 → EncounterAlreadyFinalized;
       2 件目の確定行なし; 監査行なし
   (d) find_final_by_id ヒット / ミス
+  (e) correct_record_final — 正常系: predecessor_id=source.id; FINAL_CORRECT 監査 1 件;
+      meta_json="{}"
+  (f) correct_record_final — source 不在 → FinalNotFound; 行・監査なし
+  (g) correct_record_final — depth ≥ 2 (correct → correct again); predecessor_id チェーン形状
+  (h) list_finals_by_encounter — N 件を created_at 昇順; 確定なし → []
+  (i) find_chain_for_final — 昇順チェーン; missing id → FinalNotFound
 """
 
 from __future__ import annotations
@@ -33,7 +39,13 @@ from app.infrastructure.llm.fake_client import FakeLocalLLMClient
 from app.usecases.draft import generate_record_draft
 from app.usecases.encounter import create_encounter
 from app.usecases.errors import DraftNotFound, EncounterAlreadyFinalized, FinalNotFound
-from app.usecases.final import finalize_draft_to_record_final, find_final_by_id
+from app.usecases.final import (
+    correct_record_final,
+    finalize_draft_to_record_final,
+    find_chain_for_final,
+    find_final_by_id,
+    list_finals_by_encounter,
+)
 from app.usecases.patient import create_patient
 
 
@@ -348,3 +360,328 @@ async def test_find_final_by_id_miss(session: AsyncSession) -> None:
 
     with pytest.raises(FinalNotFound):
         await find_final_by_id(final_id=uuid4(), final_repo=final_repo)
+
+
+# ---------------------------------------------------------------------------
+# (e) correct_record_final — 正常系
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_correct_record_final_happy_path(session: AsyncSession) -> None:
+    """correct_record_final が predecessor_id=source.id の新行を返す。"""
+    encounter = await _insert_encounter(session)
+    draft_repo = RecordDraftRepository(session)
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+
+    draft = await generate_record_draft(
+        clinical_input="訂正テスト入力。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=EncounterRepository(session),
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    source = await finalize_draft_to_record_final(
+        draft_id=draft.id,
+        clinician_id=uuid4(),
+        draft_repo=draft_repo,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    clinician_id = uuid4()
+    corrected = await correct_record_final(
+        source_final_id=source.id,
+        content="訂正後の内容。",
+        clinician_id=clinician_id,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    # 訂正版の predecessor_id が元版の id を指す
+    assert corrected.predecessor_id == source.id
+    # 受診 id は引き継がれる
+    assert corrected.encounter_id == source.encounter_id
+    # confidence は None (人間編集)
+    assert corrected.confidence is None
+    # clinician_id は引数の値
+    assert corrected.clinician_id == clinician_id
+
+    # DB に永続化されていること
+    found = await final_repo.find_by_id(corrected.id)
+    assert found is not None
+    assert found.predecessor_id == source.id
+
+
+@pytest.mark.asyncio
+async def test_correct_record_final_writes_final_correct_audit(session: AsyncSession) -> None:
+    """correct_record_final が FINAL_CORRECT 監査 1 件を書く; meta_json="{}"。"""
+    encounter = await _insert_encounter(session)
+    draft_repo = RecordDraftRepository(session)
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+
+    draft = await generate_record_draft(
+        clinical_input="監査テスト入力。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=EncounterRepository(session),
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    source = await finalize_draft_to_record_final(
+        draft_id=draft.id,
+        clinician_id=uuid4(),
+        draft_repo=draft_repo,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    clinician_id = uuid4()
+    corrected = await correct_record_final(
+        source_final_id=source.id,
+        content="訂正内容。",
+        clinician_id=clinician_id,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    logs = await audit_repo.list_by_target("record_final", corrected.id)
+    assert len(logs) == 1
+    assert logs[0].action == AuditAction.FINAL_CORRECT
+    assert logs[0].target_kind == "record_final"
+    assert logs[0].target_id == corrected.id
+    assert logs[0].actor == clinician_id
+    # predecessor_id はロー自身が保持 — meta_json には含めない
+    assert logs[0].meta_json == "{}"
+
+
+# ---------------------------------------------------------------------------
+# (f) correct_record_final — source 不在
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_correct_record_final_raises_final_not_found(session: AsyncSession) -> None:
+    """存在しない source_final_id で FinalNotFound が raise され、行・監査行が書かれない。"""
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+
+    nonexistent_id = uuid4()
+    with pytest.raises(FinalNotFound):
+        await correct_record_final(
+            source_final_id=nonexistent_id,
+            content="訂正内容。",
+            clinician_id=uuid4(),
+            final_repo=final_repo,
+            audit_repo=audit_repo,
+        )
+
+    await session.flush()
+    # 訂正版が書かれていないことを確認する
+    found = await final_repo.find_by_id(uuid4())
+    assert found is None
+
+
+# ---------------------------------------------------------------------------
+# (g) correct_record_final — depth ≥ 2
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_correct_record_final_chain_depth_2(session: AsyncSession) -> None:
+    """correct → correct again で predecessor チェーンが正しく形成される。
+
+    v1 (original) → v2 (correct v1) → v3 (correct v2)
+    v3.predecessor_id == v2.id (直前版を指す。v1 ではない)
+    v2.predecessor_id == v1.id
+    """
+    encounter = await _insert_encounter(session)
+    draft_repo = RecordDraftRepository(session)
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+
+    draft = await generate_record_draft(
+        clinical_input="連鎖テスト。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=EncounterRepository(session),
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    v1 = await finalize_draft_to_record_final(
+        draft_id=draft.id,
+        clinician_id=uuid4(),
+        draft_repo=draft_repo,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    v2 = await correct_record_final(
+        source_final_id=v1.id,
+        content="v2 訂正。",
+        clinician_id=uuid4(),
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    v3 = await correct_record_final(
+        source_final_id=v2.id,
+        content="v3 再訂正。",
+        clinician_id=uuid4(),
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    # v3 は v2 の直接の訂正 (v1 ではない)
+    assert v3.predecessor_id == v2.id
+    # v2 は v1 の訂正
+    assert v2.predecessor_id == v1.id
+    # v1 は初版 (predecessor なし)
+    assert v1.predecessor_id is None
+
+
+# ---------------------------------------------------------------------------
+# (h) list_finals_by_encounter
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_finals_by_encounter_returns_ordered(session: AsyncSession) -> None:
+    """list_finals_by_encounter が N 件を created_at 昇順で返す。"""
+    encounter = await _insert_encounter(session)
+    draft_repo = RecordDraftRepository(session)
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+
+    # 初版作成
+    draft = await generate_record_draft(
+        clinical_input="一覧テスト入力。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=EncounterRepository(session),
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    v1 = await finalize_draft_to_record_final(
+        draft_id=draft.id,
+        clinician_id=uuid4(),
+        draft_repo=draft_repo,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    # 訂正版を追加
+    v2 = await correct_record_final(
+        source_final_id=v1.id,
+        content="訂正版内容。",
+        clinician_id=uuid4(),
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    finals = await list_finals_by_encounter(
+        encounter_id=encounter.id,
+        final_repo=final_repo,
+    )
+
+    assert len(finals) == 2
+    # created_at 昇順: v1 が先
+    assert finals[0].id == v1.id
+    assert finals[1].id == v2.id
+    assert finals[0].created_at <= finals[1].created_at
+
+
+@pytest.mark.asyncio
+async def test_list_finals_by_encounter_empty(session: AsyncSession) -> None:
+    """list_finals_by_encounter が確定なしの受診 ID で空リストを返す (例外なし)。"""
+    final_repo = RecordFinalRepository(session)
+
+    result = await list_finals_by_encounter(
+        encounter_id=uuid4(),
+        final_repo=final_repo,
+    )
+
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# (i) find_chain_for_final
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_chain_for_final_returns_ordered_chain(session: AsyncSession) -> None:
+    """find_chain_for_final が [最古版, ..., 指定版] の昇順チェーンを返す。"""
+    encounter = await _insert_encounter(session)
+    draft_repo = RecordDraftRepository(session)
+    final_repo = RecordFinalRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+
+    draft = await generate_record_draft(
+        clinical_input="チェーンテスト入力。",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=EncounterRepository(session),
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    v1 = await finalize_draft_to_record_final(
+        draft_id=draft.id,
+        clinician_id=uuid4(),
+        draft_repo=draft_repo,
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    v2 = await correct_record_final(
+        source_final_id=v1.id,
+        content="v2 訂正。",
+        clinician_id=uuid4(),
+        final_repo=final_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    # v2 を起点にチェーンを取得 — [v1, v2] の順
+    chain = await find_chain_for_final(final_id=v2.id, final_repo=final_repo)
+
+    assert len(chain) == 2
+    assert chain[0].id == v1.id
+    assert chain[1].id == v2.id
+
+
+@pytest.mark.asyncio
+async def test_find_chain_for_final_raises_final_not_found(session: AsyncSession) -> None:
+    """find_chain_for_final が存在しない ID で FinalNotFound を raise する。"""
+    final_repo = RecordFinalRepository(session)
+
+    with pytest.raises(FinalNotFound):
+        await find_chain_for_final(final_id=uuid4(), final_repo=final_repo)

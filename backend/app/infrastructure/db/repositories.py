@@ -275,6 +275,20 @@ class RecordFinalRepository:
         row = result.scalar_one_or_none()
         return _final_to_domain(row) if row else None
 
+    async def list_by_encounter(self, encounter_id: UUID) -> list[RecordFinal]:
+        """受診 ID に紐づく全確定カルテを created_at 昇順で返す。
+
+        BE-008: GET /encounters/{id}/finals および list_finals_by_encounter ユースケースに使用する。
+        find_by_encounter (BE-007) は二重確定防止ガードとして引き続き使用する。
+        受診が存在しない場合は空リストを返す。
+        """
+        result = await self._session.execute(
+            select(RecordFinalORM)
+            .where(RecordFinalORM.encounter_id == encounter_id)
+            .order_by(RecordFinalORM.created_at.asc())
+        )
+        return [_final_to_domain(r) for r in result.scalars().all()]
+
     async def find_chain(self, record_id: UUID) -> list[RecordFinal]:
         """指定 ID から predecessor_id を辿って全前版を返す。
 
