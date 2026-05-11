@@ -11,18 +11,19 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                         | Status | Gates Touched              | Owner     |
-| ------- | ----------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology              | done   | G0                         | Generator |
-| BE-001  | Inference Adapter             | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints           | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                         | Status  | Gates Touched              | Owner     |
+| ------- | ----------------------------- | ------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology              | done    | G0                         | Generator |
+| BE-001  | Inference Adapter             | done    | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                   | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                   | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints             | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints           | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation       | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize       | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes         | done    | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment   | pending | G5 (primary), G6, G0       | Planner   |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -351,3 +352,27 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases (extend), interfaces (extend finals + encounters routers); infrastructure (one read-only method on RecordFinalRepository)
 - **Status:** done
+
+---
+
+## LLM memory budget alignment (INF-003)
+
+- **Goal:** Reconcile the gap between `SPEC.md#hardware-assumptions` ("VRAM peak ≤6 GB at gemma4:e4b Q4_0") and the observed runtime requirement of the actual `gemma4:e4b` Ollama tag, which loads ~9.8 GiB of system memory (9.4 GiB weights + 224 MiB KV cache + 125 MiB compute graph). On a Docker Desktop default (~5.7 GiB for the `llm` container) this prevents the model from loading, causing the inference endpoint to return 503 even when all earlier integration gaps are fixed. The mismatch was first observed during the FE-003 happy-path re-verification on 2026-05-11 (post-INF-002).
+- **Inputs:**
+  - SPEC.md#hardware-assumptions — VRAM peak ≤6 GB at Q4_0; 16 GB RAM reference
+  - SPEC.md#inference-layer-contract — model `gemma4:e4b` is pinned; switching the variant requires an ADR
+  - docker-compose.yml — `llm` service has no memory limit overrides; inherits Docker Desktop allocation
+  - llm container log (2026-05-11): `model requires more system memory (9.8 GiB) than is available (5.7 GiB)`
+  - Ollama manifest for `gemma4:e4b`: main blob `4c27e0f5b5ad` ≈ 9.6 GB (not Q4_0 quantization)
+- **Acceptance (one of these paths, decided by Planner):**
+  - [ ] **Path A — raise Docker memory limit:** docs/runbook-local-dev.md gains an explicit "Docker Desktop ≥ 12 GB RAM for the llm container" prerequisite; SPEC.md#hardware-assumptions is updated from "VRAM peak ≤6 GB at Q4_0" to the observed ~10 GiB system memory footprint. No code change, but the SPEC line is no longer false.
+  - [ ] **Path B — switch to a smaller Ollama tag:** ADR opened (docs/adr/NNNN-*.md) accepting the model-tier change; SPEC.md#inference-layer-contract updates the pinned tag (candidate: `gemma3:4b` ≈ 2.5 GB Q4, or `gemma4:e4b-q4_0` if the publisher provides it); `frontend/src/lib/constants.ts` `LLM_MODEL` follows; `backend/app/infrastructure/llm/config.py` default follows.
+  - [ ] **Path C — quantize locally:** Use Ollama's `ollama create` with a Modelfile that explicitly requests Q4_0 quantization off `gemma4:e4b`; SPEC line stays as-is. Adds a manual setup step to the runbook.
+  - [ ] After whichever path: `curl POST /encounters/{id}/drafts` against a seeded encounter completes with 201 + AI draft text, AIIndicatedText renders the response in `/encounters/[id]/draft`, and the FE-003 happy path is observable end-to-end via Playwright MCP from the main loop.
+- **Out-of-scope:** Multi-model routing; embeddings; cross-tag fallback chains.
+- **Open-questions:** Which path? Planner decides based on the team's compute envelope and how strict the "Q4_0 ≤6 GB" SPEC line should be treated.
+- **Inference Impact:** yes; this is a model-tier / memory budget reconciliation, the canonical G5 concern.
+- **Data Sensitivity:** none for this Block (no PHI surface change).
+- **Gates Touched:** G5 (primary), G6 (SPEC alignment), G0 (compose / runbook).
+- **Affected Layers:** infrastructure (llm config + docker-compose if memory limits added); docs (runbook + SPEC.md update).
+- **Status:** pending
