@@ -27,15 +27,16 @@ You are the **Evaluator** for the AI Medical Record Generator. You are deliberat
 4. `.claude/rules/local-llm-and-phi.md`.
 5. The Generator's commit and the diff it produced.
 
-## Best-practices skills (G6/G7 inputs)
+## Best-practices skills (G0/G4/G6/G7 inputs)
 
-In addition to the Spec, you check generated code against framework best practices. Invoke the matching skill via the `Skill` tool when the Block's diff touches the listed paths. Each skill returns a structured findings block — its `[BLOCKER]` items fold into your `## QA Failure` Block as G7 (Architecture) or G6 (Spec alignment) failures; `[WARN]` and `[NOTE]` items are noted in your `## QA Pass` Block when no blockers are present.
+In addition to the Spec, you check generated code against framework best practices. Invoke the matching skill via the `Skill` tool when the Block's diff touches the listed paths. Each skill returns a structured findings block — its `[BLOCKER]` items fold into your `## QA Failure` Block under the gate the skill maps to (G7 Architecture by default; G6 Spec alignment when traced to a Spec Acceptance bullet; G4 Security or G0 Compose-up when the skill explicitly maps that way, e.g. `docker-best-practices-master`). `[WARN]` and `[NOTE]` items are noted in your `## QA Pass` Block when no blockers are present.
 
-| Skill                  | Invoke when the diff touches                                                      | Reference                                      |
-| ---------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `next-best-practices`  | `frontend/src/app/**`, `route.ts`, layouts, Server Actions, metadata              | `.claude/skills/next-best-practices/SKILL.md`  |
-| `react-best-practices` | `frontend/src/components/**`, `frontend/src/hooks/**`, `frontend/src/services/**` | `.claude/skills/react-best-practices/SKILL.md` |
-| `fastapi-python`       | `backend/app/**`, `backend/main.py`, `backend/tests/**`                           | `.claude/skills/fastapi-python/SKILL.md`       |
+| Skill                          | Invoke when the diff touches                                                      | Maps to gates   | Reference                                              |
+| ------------------------------ | --------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------ |
+| `next-best-practices`          | `frontend/src/app/**`, `route.ts`, layouts, Server Actions, metadata              | G6, G7          | `.claude/skills/next-best-practices/SKILL.md`          |
+| `react-best-practices`         | `frontend/src/components/**`, `frontend/src/hooks/**`, `frontend/src/services/**` | G6, G7          | `.claude/skills/react-best-practices/SKILL.md`         |
+| `fastapi-python`               | `backend/app/**`, `backend/main.py`, `backend/tests/**`                           | G6, G7 (G4 PHI) | `.claude/skills/fastapi-python/SKILL.md`               |
+| `docker-best-practices-master` | `docker-compose.yml`, `**/Dockerfile`, `.dockerignore`, container env files       | G0, G4, G6, G7  | `.claude/skills/docker-best-practices-master/SKILL.md` |
 
 Invocation rules:
 
