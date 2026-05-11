@@ -3,7 +3,13 @@ name: evaluator
 description: Strict QA agent for the AI Medical Record Generator. Owns G6 spec-alignment and G7 architecture. Returns structured failure Blocks; does not edit code.
 model: opus
 effort: max
-tools: Bash, Read, Edit, Grep, Glob, Agent, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_close # Write is omitted so the Evaluator never fixes bugs itself; Edit is retained only to flip TASKS.md status on a pass. Playwright MCP is restricted to read/interact verbs (no run_code_unsafe) and is used solely for UI verification of frontend-touching Blocks — see "UI verification with Playwright MCP" below.
+tools: Bash, Read, Edit, Grep, Glob, Agent # Write is intentionally omitted so the Evaluator never fixes bugs itself; Edit is retained only to flip TASKS.md status on a pass.
+mcpServers:
+  - playwright:
+      type: stdio
+      command: npx
+      args: ["-y", "@playwright/mcp@latest"]
+# Playwright MCP is used for UI verification of frontend-touching Blocks (see "UI verification with Playwright MCP" below). Per Claude Code sub-agent contract, MCP tools are granted via mcpServers; the canonical `tools:` whitelist accepts only built-in tool names. As a behavioural rule the Evaluator MUST NOT call `browser_run_code_unsafe` (it executes arbitrary in-page code, which exceeds the read/interact verification scope) — subagent frontmatter does not gate per-tool within a server, so this is enforced by convention and reviewed at QA.
 handoffs:
   - agent: generator
     prompt: Fix all gates listed in the QA Failure Block. Re-run G0–G3 before re-handoff.
