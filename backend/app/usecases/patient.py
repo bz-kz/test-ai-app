@@ -68,8 +68,8 @@ async def create_patient(
     )
     await audit_repo.append(audit)
 
-    # PHI をログに書かない — id のみ記録する
-    logger.info("patient created: id=%s", patient.id)
+    # PHI をログに書かない — short_id で再識別リスクを低減する
+    logger.info("patient created: id=%s", short_id(patient.id))
     return patient
 
 

@@ -70,8 +70,8 @@ async def create_encounter(
     )
     await audit_repo.append(audit)
 
-    # PHI をログに書かない — id のみ記録する
-    logger.info("encounter created: id=%s", encounter.id)
+    # PHI をログに書かない — short_id で再識別リスクを低減する
+    logger.info("encounter created: id=%s", short_id(encounter.id))
     return encounter
 
 

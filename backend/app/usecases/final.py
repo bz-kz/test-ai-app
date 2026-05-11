@@ -92,12 +92,12 @@ async def finalize_draft_to_record_final(
     )
     await audit_repo.append(audit)
 
-    # PHI をログに書かない — id のみ記録する
+    # PHI をログに書かない — short_id で再識別リスクを低減する
     logger.info(
         "record_final created: id=%s draft_id=%s clinician_id=%s",
-        final.id,
-        draft_id,
-        clinician_id,
+        short_id(final.id),
+        short_id(draft_id),
+        short_id(clinician_id),
     )
     return final
 
@@ -168,12 +168,12 @@ async def correct_record_final(
     )
     await audit_repo.append(audit)
 
-    # PHI をログに書かない — UUID のみ記録する
+    # PHI をログに書かない — short_id で再識別リスクを低減する
     logger.info(
         "record_final corrected: new_id=%s source_id=%s clinician_id=%s",
-        new_final.id,
-        source_final_id,
-        clinician_id,
+        short_id(new_final.id),
+        short_id(source_final_id),
+        short_id(clinician_id),
     )
     return new_final
 

@@ -11,21 +11,22 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                         | Status | Gates Touched              | Owner     |
-| ------- | ----------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology              | done   | G0                         | Generator |
-| BE-001  | Inference Adapter             | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints           | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment   | done   | G5 (primary), G6, G0       | Planner   |
-| BE-009  | List drafts for encounter     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-010  | Security hardening bundle     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                           | Status | Gates Touched              | Owner     |
+| ------- | ------------------------------- | ------ | -------------------------- | --------- |
+| INF-001 | Runtime Topology                | done   | G0                         | Generator |
+| BE-001  | Inference Adapter               | done   | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints               | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation         | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize         | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes           | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain   | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment     | done   | G5 (primary), G6, G0       | Planner   |
+| BE-009  | List drafts for encounter       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-010  | Security hardening bundle       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-011  | INFO-level UUID hardening sweep | qa     | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -436,3 +437,32 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** interfaces (exception_handlers), usecases (DEBUG log hardening), domain (short_id helper), frontend lib (api.ts)
 - **Status:** done
+
+---
+
+## INFO-level UUID hardening sweep (BE-011)
+
+- **Goal:** Replace bare UUID interpolation with `short_id(...)` at all remaining INFO-level call sites in usecases. Defence-in-depth: UUIDs are not enumerated PHI under `.claude/rules/local-llm-and-phi.md` §3, but shortening them reduces re-identification risk if logs are scraped from a stolen device and achieves consistent log shape across DEBUG/INFO levels.
+- **Inputs:**
+  - .claude/rules/local-llm-and-phi.md §3
+  - backend/app/domain/phi.py — `short_id` helper from BE-010
+  - BE-010 security-check ADVICE: INFO-level lines in `draft.py:107`, `draft.py:188`, `final.py:96-101`, `final.py:172-177`, `encounter.py:74`, `patient.py:72` still interpolated full UUIDs
+- **Acceptance:**
+  - [x] `encounter.py:74` — `encounter.id` wrapped: `short_id(encounter.id)`
+  - [x] `draft.py:107` — `draft.id`, `encounter_id` both wrapped with `short_id(...)`
+  - [x] `draft.py:188` — `draft_id`, `clinician_id` both wrapped with `short_id(...)`
+  - [x] `final.py:96-101` — `final.id`, `draft_id`, `clinician_id` all wrapped with `short_id(...)`
+  - [x] `final.py:172-177` — `new_final.id`, `source_final_id`, `clinician_id` all wrapped with `short_id(...)`
+  - [x] `patient.py:72` — `patient.id` wrapped: `short_id(patient.id)`
+  - [x] `grep -nE 'logger\.(info|warning)\(.*%s.*,\s*[a-z_]+_id\b' backend/app/usecases` — all remaining hits already use `short_id(...)`
+  - [x] `logger.error(...)` sites unchanged — incident correlation retains full UUIDs (none found in usecases)
+  - [x] audit_log `meta_json="{}"` unchanged at all sites
+  - [x] No behaviour change; G3 pytest 208 passed baseline maintained
+  - [x] `short_id` signature unchanged from BE-010
+- **Out-of-scope:** ERROR-level UUID logging; audit_log meta_json; `short_id` helper changes; non-usecase modules.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI (hardening — no new exposure introduced)
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** usecases only (INFO logging hardening)
+- **Status:** qa

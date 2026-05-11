@@ -103,8 +103,12 @@ async def generate_record_draft(
     )
     await audit_repo.append(audit)
 
-    # PHI をログに書かない — id のみ記録する
-    logger.info("record_draft created: id=%s encounter_id=%s", draft.id, encounter_id)
+    # PHI をログに書かない — short_id で再識別リスクを低減する
+    logger.info(
+        "record_draft created: id=%s encounter_id=%s",
+        short_id(draft.id),
+        short_id(encounter_id),
+    )
     return draft
 
 
@@ -184,8 +188,12 @@ async def edit_record_draft(
     )
     await audit_repo.append(audit)
 
-    # PHI をログに書かない — id のみ記録する
-    logger.info("record_draft edited: id=%s clinician_id=%s", draft_id, clinician_id)
+    # PHI をログに書かない — short_id で再識別リスクを低減する
+    logger.info(
+        "record_draft edited: id=%s clinician_id=%s",
+        short_id(draft_id),
+        short_id(clinician_id),
+    )
 
     # (4) 更新後エンティティを再取得して返す (update_content は返り値を持たない)
     updated = await draft_repo.find_by_id(draft_id)
