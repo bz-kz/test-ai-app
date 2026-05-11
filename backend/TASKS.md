@@ -13,7 +13,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 | ID      | Title            | Status | Gates Touched | Owner     |
 | ------- | ---------------- | ------ | ------------- | --------- |
-| INF-001 | Runtime Topology | qa     | G0            | Generator |
+| INF-001 | Runtime Topology | done   | G0            | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -36,7 +36,7 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** none
 - **Gates Touched:** G0
 - **Affected Layers:** _(infrastructure / compose only)_
-- **Status:** qa
+- **Status:** done
 
 ---
 
