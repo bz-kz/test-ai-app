@@ -12,6 +12,9 @@ PHI ルール §3:
 from __future__ import annotations
 
 import logging
+
+# traceback モジュールはスタックフレーム情報の抽出にのみ使用する。
+# format_exc() は 5xx ハンドラでは使わない — ローカル変数に PHI が含まれうるため。
 import traceback
 from typing import cast
 
@@ -71,10 +74,10 @@ async def http_exception_handler(
         safe_code = str(_d["code"])
         safe_message = str(_d["message"])
     elif isinstance(detail, str):
-        # detail 文字列は開発者が書いた固定テキストを想定するが、
-        # PHI 混入を防ぐため mask_phi を通す
+        # 開発者が書いた短い detail 文字列でも PHI が紛れ込む可能性がある
+        # (例: f"patient {mrn} not found")。長さに関わらず無条件にマスクする。
         safe_code = _http_code_to_identifier(exc.status_code)
-        safe_message = mask_phi(detail) if len(detail) > 64 else detail
+        safe_message = mask_phi(detail)
     else:
         # オブジェクトや dict が渡された場合は型名だけ返す
         safe_code = _http_code_to_identifier(exc.status_code)
@@ -154,12 +157,20 @@ async def unhandled_exception_handler(
     リクエストパスのみを含め、ボディはスクラブする。
     レスポンスには内部詳細を一切含めない。
     """
-    # スタックトレースをログに記録 (ボディなし、パスのみ)
-    tb = traceback.format_exc()
+    # ローカル変数にPHI(患者情報など)が含まれうるため、フルトレースバックは記録しない。
+    # 例外クラス名 + 発生ファイル/行番号のみを記録する (デバッグ相関に十分)。
+    tb_frames = traceback.extract_tb(exc.__traceback__)
+    if tb_frames:
+        top_frame = tb_frames[-1]
+        location = f"{top_frame.filename}:{top_frame.lineno}"
+    else:
+        location = "<unknown>"
+    exc_class = f"{exc.__class__.__module__}.{exc.__class__.__name__}"
     logger.error(
-        "Unhandled exception at %s:\n%s",
+        "Unhandled exception at %s: %s at %s",
         request.url.path,
-        tb,
+        exc_class,
+        location,
     )
 
     body = ErrorResponse(

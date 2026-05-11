@@ -11,20 +11,21 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                         | Status | Gates Touched              | Owner     |
-| ------- | ----------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology              | done   | G0                         | Generator |
-| BE-001  | Inference Adapter             | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints           | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment   | done   | G5 (primary), G6, G0       | Planner   |
-| BE-009  | List drafts for encounter     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                         | Status      | Gates Touched              | Owner     |
+| ------- | ----------------------------- | ----------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology              | done        | G0                         | Generator |
+| BE-001  | Inference Adapter             | done        | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints           | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation       | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes         | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment   | done        | G5 (primary), G6, G0       | Planner   |
+| BE-009  | List drafts for encounter     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-010  | Security hardening bundle     | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -409,3 +410,29 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** infrastructure (repository +list_by_encounter), usecases (extend draft.py +di.py), interfaces (extend encounters router)
 - **Status:** done
+
+---
+
+## Security hardening bundle (BE-010)
+
+- **Goal:** Tighten four PHI-leak vectors flagged as ADVICE in prior security-check reports. Pure defensive hardening — no new endpoints, no schema change, no behavioural drift on success paths.
+- **Inputs:**
+  - .claude/rules/local-llm-and-phi.md §3 §4 — PHI in prompts/logs; operational reads
+  - backend/SPEC.md#api-surface — error envelope
+  - Prior security-check reports (BE-003, BE-005, BE-006, FE-002)
+- **Acceptance:**
+  - [ ] Item 1: `http_exception_handler` always masks string detail via `mask_phi`, regardless of length. The `len > 64` threshold is removed. `grep -nE 'len\(.*\)\s*>\s*64' backend/app/interfaces/exception_handlers.py` returns 0 hits.
+  - [ ] Item 1 test: `test_exception_handlers.py` includes a test for short PHI-containing detail that confirms the response message is masked.
+  - [ ] Item 2: `unhandled_exception_handler` logs only `exc.__class__.__module__ + "." + exc.__class__.__name__` + top-frame file:line. No `traceback.format_exc()` in production code. `grep -RnE 'traceback\.format_exc\(\)' backend/app` returns 0 hits.
+  - [ ] Item 2 test: `test_exception_handlers.py` uses `caplog` to assert the logged line contains the redacted class+location and does NOT contain the raw exception message or user input.
+  - [ ] Item 3: All `logger.debug(...)` lines in `backend/app/usecases/**` that interpolate a UUID use `short_id(uuid)` helper. `short_id` is defined in `app/domain/phi.py` and returns the first 8 hex chars + `…`.
+  - [ ] Item 3 test: `app/domain/phi.py` tests cover `short_id` for empty / typical UUID / non-UUID string.
+  - [ ] Item 4: `_buildServerErrorContext` and its `void` call site are deleted from `frontend/src/lib/api.ts`. `grep -rn '_buildServerErrorContext' frontend/src` returns 0 hits.
+  - [ ] Item 4 verification: existing 21+ tests in `frontend/src/services/__tests__/drafts.test.ts` and `frontend/src/lib/__tests__/maskPhi.test.ts` remain green.
+- **Out-of-scope:** Auth/authorization. Streaming UI. New endpoints. Schema migrations. Success-path response shape changes. PHI rule amendments.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI (defensive hardening of existing PHI surfaces — no new exposure introduced)
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** interfaces (exception_handlers), usecases (DEBUG log hardening), domain (short_id helper), frontend lib (api.ts)
+- **Status:** in-progress

@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.domain.entities import AuditAction, AuditLog, RecordDraft
+from app.domain.phi import short_id
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
     EncounterRepository,
@@ -67,12 +68,16 @@ async def generate_record_draft(
 
     # (2) プロンプト構築: clinical_input は PHI のため debug ログもマスクする
     prompt = build_draft_prompt(clinical_input)
-    logger.debug("draft prompt built: encounter_id=%s length=%d", encounter_id, len(prompt))
+    logger.debug(
+        "draft prompt built: encounter_id=%s length=%d",
+        short_id(encounter_id),
+        len(prompt),
+    )
 
     # (3) LLM 呼び出し: InferenceError はキャッチせず伝播させる
     # PHI を含む clinical_input / response.text はログに書かない
     response = await llm.generate(prompt, GenerateParams(temperature=0.7, max_tokens=1500))
-    logger.debug("llm generate completed: encounter_id=%s", encounter_id)
+    logger.debug("llm generate completed: encounter_id=%s", short_id(encounter_id))
 
     # (4) 下書き永続化 + 監査ログ追記 (同一トランザクション内)
     now = datetime.now(tz=UTC)
@@ -133,7 +138,7 @@ async def list_drafts_by_encounter(
     drafts = await draft_repo.list_by_encounter(encounter_id)
     logger.debug(
         "list_drafts_by_encounter: encounter_id=%s count=%d",
-        encounter_id,
+        short_id(encounter_id),
         len(drafts),
     )
     return drafts

@@ -9,8 +9,10 @@ BE-003 Acceptance:
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, patch  # noqa: F401 — used in TestMainEndpointsRegression
 
+import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -275,6 +277,133 @@ class TestResponseModelStripping:
         err = ErrorResponse(code="not_found", message="Resource not found")
         dumped = err.model_dump()
         assert set(dumped.keys()) == {"code", "message"}
+
+
+# ---------------------------------------------------------------------------
+# main.py の /ping, /health エンドポイントの後退テスト
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# BE-010 Item 1 — 短い detail 文字列も常に mask_phi を通す
+# ---------------------------------------------------------------------------
+
+
+class TestHttpExceptionHandlerPhiMasking:
+    def test_short_detail_with_phi_substring_is_masked(self) -> None:
+        """64 文字未満の detail でも mask_phi が適用される (BE-010 Item 1)。
+
+        攻撃ベクトル: 開発者が f"patient {mrn} not found" のような短い detail を
+        HTTPException に渡した場合でも、原文がそのまま返らず mask_phi の
+        トリミングシグネチャ ("...[masked N chars]") が含まれることを確認する。
+        """
+        app = _make_test_app()
+
+        @app.get("/short-phi")
+        async def _raise_short_phi() -> dict[str, str]:
+            # 短い detail (< 64 文字) だが PHI 様の文字列を含む
+            raise HTTPException(status_code=404, detail="MRN-X not found")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/short-phi")
+
+        assert resp.status_code == 404
+        body = resp.json()
+        message = body.get("message", "")
+        # mask_phi が適用されたことを示す "[masked N chars]" シグネチャが含まれる
+        assert "[masked" in message
+        # 原文全体がそのまま返らない (後半 "not found" の末尾文字列は切り捨てられる)
+        assert "not found" not in message
+
+    def test_detail_masked_regardless_of_length(self) -> None:
+        """長短に関わらず文字列 detail は常に mask_phi を通す (BE-010 Item 1)。
+
+        以前の実装では len(detail) > 64 のときのみマスクしていた。
+        BE-010 でその閾値を撤廃し、短い detail にも mask_phi が適用されることを確認する。
+        mask_phi は先頭 8 文字を保持しその後を "[masked N chars]" に置換する。
+        """
+        app = _make_test_app()
+
+        @app.get("/very-short-detail")
+        async def _raise_very_short() -> dict[str, str]:
+            # 9 文字以上の detail — 8 文字を超える後半が必ずマスクされる
+            raise HTTPException(status_code=400, detail="MRN9999-EXTENDED")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/very-short-detail")
+
+        assert resp.status_code == 400
+        body = resp.json()
+        message = body.get("message", "")
+        # mask_phi のシグネチャが含まれる (8 文字超の部分がマスクされた証拠)
+        assert "[masked" in message
+        # 9 文字目以降の "EXTENDED" は応答に含まれない
+        assert "EXTENDED" not in message
+
+
+# ---------------------------------------------------------------------------
+# BE-010 Item 2 — 5xx ハンドラのトレースバック redaction
+# ---------------------------------------------------------------------------
+
+
+class TestUnhandledExceptionHandlerRedaction:
+    def test_log_contains_exc_class_and_location_not_raw_message(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """500 ハンドラのログに例外クラス名+ファイル:行のみ含まれ、
+        例外メッセージやユーザー入力が含まれない (BE-010 Item 2)。
+        """
+        app = _make_test_app()
+
+        @app.get("/traceback-test")
+        async def _crash_with_message() -> dict[str, str]:
+            raise RuntimeError("PATIENT-PHI-IN-MESSAGE-DO-NOT-LOG")
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        with caplog.at_level(logging.ERROR, logger="app.interfaces.exception_handlers"):
+            resp = client.get("/traceback-test")
+
+        assert resp.status_code == 500
+
+        # ログレコードが少なくとも 1 件あること
+        error_records = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert len(error_records) >= 1
+
+        log_text = " ".join(r.getMessage() for r in error_records)
+
+        # 例外クラス名が含まれる
+        assert "RuntimeError" in log_text
+        # ファイル名が含まれる (どこかのフレームのファイル名)
+        assert ".py:" in log_text
+        # 例外の raw メッセージが含まれない
+        assert "PATIENT-PHI-IN-MESSAGE-DO-NOT-LOG" not in log_text
+
+    def test_log_does_not_contain_user_input(self, caplog: pytest.LogCaptureFixture) -> None:
+        """POST ボディ由来の値がトレースバックログに含まれない (BE-010 Item 2)。"""
+        from fastapi import Body
+
+        app = _make_test_app()
+
+        @app.post("/traceback-body-test")
+        async def _crash_with_body(
+            mrn: str = Body(..., embed=True),
+        ) -> dict[str, str]:
+            raise ValueError(f"processing failed for {mrn}")
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        with caplog.at_level(logging.ERROR, logger="app.interfaces.exception_handlers"):
+            resp = client.post("/traceback-body-test", json={"mrn": "PHI-LOG-LEAK-TEST"})
+
+        assert resp.status_code == 500
+
+        log_text = " ".join(r.getMessage() for r in caplog.records if r.levelname == "ERROR")
+
+        # ユーザー入力がログに含まれない
+        assert "PHI-LOG-LEAK-TEST" not in log_text
+        # ValueError クラス名は含まれる
+        assert "ValueError" in log_text
 
 
 # ---------------------------------------------------------------------------

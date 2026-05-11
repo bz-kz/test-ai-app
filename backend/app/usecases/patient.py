@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from app.domain.entities import AuditAction, AuditLog, Patient
-from app.domain.phi import mask_phi
+from app.domain.phi import mask_phi, short_id
 from app.infrastructure.db.repositories import AuditLogRepository, PatientRepository
 from app.usecases.errors import MRNConflict
 
@@ -85,7 +85,7 @@ async def find_patient_by_id(
     """
     patient = await patient_repo.find_by_id(patient_id)
     if patient is None:
-        logger.debug("patient not found: id=%s", patient_id)
+        logger.debug("patient not found: id=%s", short_id(patient_id))
     return patient
 
 

@@ -4,18 +4,11 @@
  * サービス層がここを経由して API を呼び出す。
  * non-2xx レスポンスは例外ではなく ApiResult の失敗タグに変換する。
  * PHI を含む可能性があるクエリ文字列はログに出力しない。
+ *
+ * 注: サーバーエラーコンテキストを構造化ログに送るヘルパーは
+ * PHI レビュー完了まで導入しない (BE-010)。
  */
 import { API_BASE_URL } from "@/lib/constants";
-import { maskPhi } from "@/lib/maskPhi";
-
-// PHI を含む可能性があるパスをマスクしてデバッグ情報を生成するユーティリティ。
-// console.* は本番コードで禁止のため、将来的に構造化ログ基盤が整い次第差し替える。
-// 現時点ではサーバーエラー時の情報をサイレントに破棄し、戻り値のみで通知する。
-function _buildServerErrorContext(path: string, code: string): string {
-  // クエリ文字列を除去して PHI 漏洩を防ぐ
-  const safePath = path.split("?")[0];
-  return `server_error path=${maskPhi(safePath)} code=${code}`;
-}
 
 /** GET /foo?mrn=X の X はクエリ文字列に PHI が含まれうるため、ログには出さない */
 export type ApiResult<T> =
@@ -78,15 +71,13 @@ export async function apiFetch<T>(
       return { kind: "validation_error", fields };
     }
 
-    // 予期しないサーバーエラー — パス (クエリなし) のみログに出す
+    // 予期しないサーバーエラー — コードのみ返す (パス・ボディはログに出さない)
     type ErrorBody = { detail?: { code?: string } | string };
     const body = (await response.json().catch(() => ({}))) as ErrorBody;
     const code =
       typeof body.detail === "object" && body.detail !== null
         ? (body.detail.code ?? String(response.status))
         : String(response.status);
-    // エラーコンテキストを生成する (将来の構造化ログ基盤向け)
-    void _buildServerErrorContext(path, code);
     return { kind: "server_error", code };
   } catch (err) {
     // AbortError はキャンセルの正常系 — 呼び出し元に伝播させる

@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.domain.entities import AuditAction, AuditLog, RecordFinal
+from app.domain.phi import short_id
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
     RecordDraftRepository,
@@ -191,7 +192,7 @@ async def list_finals_by_encounter(
     finals = await final_repo.list_by_encounter(encounter_id)
     logger.debug(
         "list_finals_by_encounter: encounter_id=%s count=%d",
-        encounter_id,
+        short_id(encounter_id),
         len(finals),
     )
     return finals
@@ -214,7 +215,7 @@ async def find_chain_for_final(
         raise FinalNotFound
     logger.debug(
         "find_chain_for_final: final_id=%s chain_length=%d",
-        final_id,
+        short_id(final_id),
         len(chain),
     )
     return chain

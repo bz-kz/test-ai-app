@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.domain.entities import AuditAction, AuditLog, Encounter
+from app.domain.phi import short_id
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
     EncounterRepository,
@@ -82,7 +83,7 @@ async def find_encounter_by_id(
     """ID で受診を取得する。存在しない場合は EncounterNotFound を raise する。"""
     encounter = await encounter_repo.find_by_id(encounter_id)
     if encounter is None:
-        logger.debug("encounter not found: id=%s", encounter_id)
+        logger.debug("encounter not found: id=%s", short_id(encounter_id))
         raise EncounterNotFound
     return encounter
 
@@ -105,5 +106,5 @@ async def list_encounters_by_patient(
         raise PatientNotFound
 
     encounters = await encounter_repo.list_by_patient(patient_id)
-    logger.debug("encounter list: patient_id=%s count=%d", patient_id, len(encounters))
+    logger.debug("encounter list: patient_id=%s count=%d", short_id(patient_id), len(encounters))
     return encounters
