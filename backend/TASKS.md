@@ -11,10 +11,11 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title             | Status | Gates Touched          | Owner     |
-| ------- | ----------------- | ------ | ---------------------- | --------- |
-| INF-001 | Runtime Topology  | done   | G0                     | Generator |
-| BE-001  | Inference Adapter | done   | G1, G2, G3, G4, G5, G7 | Generator |
+| ID      | Title             | Status      | Gates Touched          | Owner     |
+| ------- | ----------------- | ----------- | ---------------------- | --------- |
+| INF-001 | Runtime Topology  | done        | G0                     | Generator |
+| BE-001  | Inference Adapter | done        | G1, G2, G3, G4, G5, G7 | Generator |
+| BE-002  | Persistence       | in-progress | G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -87,3 +88,26 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** domain, usecases, infrastructure, interfaces
 - **Status:** sample only — do not implement.
+
+---
+
+## Persistence (BE-002)
+
+- **Goal:** Deliver the storage layer for patient/encounter/record data with PHI columns explicitly flagged, `record_final` immutability enforced at two levels, repositories in `app/infrastructure/db/`, and Alembic migrations under `backend/migrations/`.
+- **Inputs:**
+  - backend/SPEC.md#persistence
+  - SPEC.md#domain-glossary
+  - .claude/rules/local-llm-and-phi.md
+- **Acceptance:**
+  - [ ] Tables: `patient`, `encounter`, `record_draft`, `record_final`, `audit_log`.
+  - [ ] PHI columns flagged via `MappedColumn(info={"phi": True})`; logging filter masks values carrying the flag.
+  - [ ] `record_final` rows are immutable: SQLAlchemy `before_flush` event rejects UPDATE; `RecordFinalRepository` has no `update_*` method.
+  - [ ] All persistence goes through repositories in `app/infrastructure/db/`. No raw SQL in `usecases` or `interfaces`.
+  - [ ] Migrations live under `backend/migrations/` (Alembic). Initial migration creates all 5 tables; PHI columns noted in migration header comment.
+- **Out-of-scope:** Patient search endpoints, MRN normalization, read replicas, OLAP, BE-003 API Surface.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; PHI column values masked before any logger call via `PhiLoggingFilter`.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** infrastructure, usecases
+- **Status:** in-progress
