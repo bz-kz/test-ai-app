@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from app.domain.entities import AuditAction, AuditLog, Patient
 from app.domain.phi import mask_phi
 from app.infrastructure.db.repositories import AuditLogRepository, PatientRepository
+from app.usecases.errors import MRNConflict
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +33,15 @@ async def create_patient(
 ) -> Patient:
     """患者を新規作成し、監査ログを記録する。
 
-    MRN 重複の場合は None を返すのではなく既存エンティティを None として表す値の代わりに
-    呼び出し元が重複判定できるよう既存レコードを検索してから呼び出すこと。
+    MRN 重複の場合は MRNConflict を raise する。
     同じトランザクションで patient INSERT と audit_log INSERT を行う。
     PHI は患者エンティティ内に保持するが、ログには出力しない。
     """
+    # MRN 重複チェック: ユースケース内で完結させ、interfaces 層に露出しない
+    existing = await patient_repo.find_by_mrn(mrn)
+    if existing is not None:
+        raise MRNConflict
+
     # date → datetime(UTC midnight) に変換する (domain entity は datetime 型)
     dob_dt = datetime(date_of_birth.year, date_of_birth.month, date_of_birth.day, tzinfo=UTC)
 

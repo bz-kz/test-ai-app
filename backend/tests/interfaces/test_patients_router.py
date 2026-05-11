@@ -9,11 +9,16 @@ BE-004 Acceptance:
   (e) GET  /patients?mrn= 200 — 存在する患者
   (f) GET  /patients?mrn= 404 — 存在しない患者 (PHI を echo しない)
   (g) POST /patients 422 — バリデーションエラー
+
+DI 方針:
+  ルーターはユースケースファクトリ依存 (make_create_patient 等) を使うため、
+  テストでは各ファクトリを override する。infrastructure を直接参照しない。
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from datetime import date
 from uuid import uuid4
 
 import httpx
@@ -29,13 +34,19 @@ from sqlalchemy.ext.asyncio import (
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.infrastructure.db.engine import Base
+from app.infrastructure.db.repositories import AuditLogRepository, PatientRepository
 from app.interfaces.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
     unhandled_exception_handler,
 )
-from app.interfaces.routers.patients import _get_db_session
 from app.interfaces.routers.patients import router as patients_router
+from app.usecases.di import (
+    make_create_patient,
+    make_find_patient_by_id,
+    make_find_patient_by_mrn,
+)
+from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
 
 # ---------------------------------------------------------------------------
 # テスト用アプリとインメモリ DB のセットアップ
@@ -43,10 +54,54 @@ from app.interfaces.routers.patients import router as patients_router
 
 
 def _make_test_app(session: AsyncSession) -> FastAPI:
-    """インメモリ DB セッションを DI に差し込んだテスト用 FastAPI を生成する。"""
+    """インメモリ DB セッションをユースケースファクトリ DI に差し込んだ
+    テスト用 FastAPI を生成する。"""
 
-    async def _override_session() -> AsyncGenerator[AsyncSession, None]:
-        yield session
+    # 各ファクトリを同一セッションを使うクロージャで上書きする
+    def _override_make_create_patient():  # type: ignore[no-untyped-def]
+        patient_repo = PatientRepository(session)
+        audit_repo = AuditLogRepository(session)
+
+        async def _create(
+            mrn: str,
+            family_name: str,
+            given_name: str,
+            date_of_birth: date,
+        ):  # type: ignore[no-untyped-def]
+            patient = await create_patient(
+                mrn=mrn,
+                family_name=family_name,
+                given_name=given_name,
+                date_of_birth=date_of_birth,
+                patient_repo=patient_repo,
+                audit_repo=audit_repo,
+            )
+            await session.flush()
+            return patient
+
+        return _create
+
+    def _override_make_find_patient_by_id():  # type: ignore[no-untyped-def]
+        patient_repo = PatientRepository(session)
+
+        async def _find(patient_id):  # type: ignore[no-untyped-def]
+            return await find_patient_by_id(
+                patient_id=patient_id,
+                patient_repo=patient_repo,
+            )
+
+        return _find
+
+    def _override_make_find_patient_by_mrn():  # type: ignore[no-untyped-def]
+        patient_repo = PatientRepository(session)
+
+        async def _find(mrn):  # type: ignore[no-untyped-def]
+            return await find_patient_by_mrn(
+                mrn=mrn,
+                patient_repo=patient_repo,
+            )
+
+        return _find
 
     test_app = FastAPI()
     test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
@@ -56,7 +111,9 @@ def _make_test_app(session: AsyncSession) -> FastAPI:
     )
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(patients_router, prefix="")
-    test_app.dependency_overrides[_get_db_session] = _override_session
+    test_app.dependency_overrides[make_create_patient] = _override_make_create_patient
+    test_app.dependency_overrides[make_find_patient_by_id] = _override_make_find_patient_by_id
+    test_app.dependency_overrides[make_find_patient_by_mrn] = _override_make_find_patient_by_mrn
     return test_app
 
 

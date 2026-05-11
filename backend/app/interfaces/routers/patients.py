@@ -8,23 +8,30 @@ PHI ルール:
   - mrn / family_name / given_name / date_of_birth はリクエスト/レスポンス本文にのみ存在する。
   - エラーメッセージには PHI 値を一切含めない。
   - ログ出力前に mask_phi() を通す。
+
+レイヤー方向:
+  interfaces → usecases のみ。infrastructure は直接参照しない。
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator
 from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.engine import get_session
-from app.infrastructure.db.repositories import AuditLogRepository, PatientRepository
 from app.interfaces.schemas import ErrorResponse
-from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
+from app.usecases.di import (
+    CreatePatientCallable,
+    FindPatientByIdCallable,
+    FindPatientByMrnCallable,
+    make_create_patient,
+    make_find_patient_by_id,
+    make_find_patient_by_mrn,
+)
+from app.usecases.errors import MRNConflict
 
 logger = logging.getLogger(__name__)
 
@@ -57,17 +64,6 @@ class PatientRead(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 依存性注入ヘルパー
-# ---------------------------------------------------------------------------
-
-
-async def _get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI Depends 経由でセッションを提供する。"""
-    async for session in get_session():
-        yield session
-
-
-# ---------------------------------------------------------------------------
 # エンドポイント
 # ---------------------------------------------------------------------------
 
@@ -84,36 +80,28 @@ async def _get_db_session() -> AsyncGenerator[AsyncSession, None]:
 )
 async def post_patient(
     body: PatientCreate,
-    session: AsyncSession = Depends(_get_db_session),
+    create: CreatePatientCallable = Depends(make_create_patient),
 ) -> PatientRead:
     """新規患者を作成し、監査ログを記録する (create_patient ユースケース)。
 
     PHI MUST NOT be echoed in error messages.
     MRN 重複の場合は 409 を返す (MRN 値はエラーメッセージに含めない)。
     """
-    patient_repo = PatientRepository(session)
-    audit_repo = AuditLogRepository(session)
-
-    # MRN 重複チェック: 先に検索して重複を検出する
-    existing = await patient_repo.find_by_mrn(body.mrn)
-    if existing is not None:
+    try:
+        patient = await create(
+            body.mrn,
+            body.family_name,
+            body.given_name,
+            body.date_of_birth,
+        )
+    except MRNConflict:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "patient_mrn_conflict",
                 "message": "A patient with this MRN already exists.",
             },
-        )
-
-    patient = await create_patient(
-        mrn=body.mrn,
-        family_name=body.family_name,
-        given_name=body.given_name,
-        date_of_birth=body.date_of_birth,
-        patient_repo=patient_repo,
-        audit_repo=audit_repo,
-    )
-    await session.commit()
+        ) from None
 
     return PatientRead(
         id=patient.id,
@@ -136,18 +124,13 @@ async def post_patient(
 )
 async def get_patient_by_id(
     patient_id: UUID,
-    session: AsyncSession = Depends(_get_db_session),
+    find: FindPatientByIdCallable = Depends(make_find_patient_by_id),
 ) -> PatientRead:
     """UUID で患者を取得する (find_patient_by_id ユースケース)。
 
     PHI MUST NOT be echoed in error messages.
     """
-    patient_repo = PatientRepository(session)
-
-    patient = await find_patient_by_id(
-        patient_id=patient_id,
-        patient_repo=patient_repo,
-    )
+    patient = await find(patient_id)
     if patient is None:
         raise HTTPException(
             status_code=404,
@@ -174,18 +157,13 @@ async def get_patient_by_id(
 )
 async def get_patient_by_mrn(
     mrn: str = Query(..., min_length=1, description="診察番号 (PHI)"),
-    session: AsyncSession = Depends(_get_db_session),
+    find: FindPatientByMrnCallable = Depends(make_find_patient_by_mrn),
 ) -> PatientRead:
     """MRN で患者を取得する (find_patient_by_mrn ユースケース)。
 
     PHI MUST NOT be echoed in error messages.
     """
-    patient_repo = PatientRepository(session)
-
-    patient = await find_patient_by_mrn(
-        mrn=mrn,
-        patient_repo=patient_repo,
-    )
+    patient = await find(mrn)
     if patient is None:
         raise HTTPException(
             status_code=404,

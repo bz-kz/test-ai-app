@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.domain.entities import AuditAction
 from app.infrastructure.db.engine import Base
 from app.infrastructure.db.repositories import AuditLogRepository, PatientRepository
+from app.usecases.errors import MRNConflict
 from app.usecases.patient import (
     create_patient,
     find_patient_by_id,
@@ -107,13 +108,13 @@ async def test_create_patient_writes_one_audit_log(session: AsyncSession) -> Non
 
 
 # ---------------------------------------------------------------------------
-# (c) MRN 重複時に既存患者が見つかる
+# (c) MRN 重複時に create_patient が MRNConflict を raise する
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_find_by_mrn_returns_existing_on_duplicate(session: AsyncSession) -> None:
-    """同一 MRN での find_by_mrn が既存患者を返す (重複検出に使う)。"""
+async def test_create_patient_raises_on_duplicate_mrn(session: AsyncSession) -> None:
+    """同一 MRN で create_patient を 2 回呼ぶと MRNConflict が raise される。"""
     patient_repo = PatientRepository(session)
     audit_repo = AuditLogRepository(session)
 
@@ -127,9 +128,15 @@ async def test_find_by_mrn_returns_existing_on_duplicate(session: AsyncSession) 
     )
     await session.flush()
 
-    # 同じ MRN での検索は既存患者を返す
-    existing = await patient_repo.find_by_mrn("MRN-DUPLICATE")
-    assert existing is not None
+    with pytest.raises(MRNConflict):
+        await create_patient(
+            mrn="MRN-DUPLICATE",
+            family_name="別の",
+            given_name="患者",
+            date_of_birth=date(1980, 5, 15),
+            patient_repo=patient_repo,
+            audit_repo=audit_repo,
+        )
 
 
 # ---------------------------------------------------------------------------
