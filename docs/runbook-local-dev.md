@@ -88,6 +88,22 @@ docker compose restart backend           # restart after code change without reb
 docker compose exec backend bash         # shell into a service
 ```
 
+## After a backend or frontend code change
+
+The `frontend` and `backend` images are built from source via multi-stage Dockerfiles, so running containers do NOT pick up source-tree edits. After committing a backend or frontend Block, rebuild the changed service so the runtime matches the new code:
+
+```bash
+# Backend code change (any feature/bugfix Block under backend/app/**)
+docker compose build backend && docker compose up -d backend
+
+# Frontend code change (any feature/bugfix Block under frontend/src/**)
+docker compose build frontend && docker compose up -d frontend
+```
+
+If you skip this step the browser (or `curl`) hits the pre-build image. Symptoms include 405/404 for endpoints declared in the new Block, or the UI showing the pre-edit JSX. The FE-006 verification surfaced this trap (the running backend container was stale by two Blocks because rebuild had not been triggered after BE-008 and BE-009).
+
+> A migration or schema change additionally requires `docker compose exec backend alembic upgrade head` — see _First boot_ above.
+
 ## Hardware-specific paths
 
 ### GPU (NVIDIA)
