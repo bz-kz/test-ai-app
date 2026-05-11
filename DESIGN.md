@@ -59,6 +59,8 @@ Base unit: **8px**
 - **2xl**: 48px — Layout sections
 - **3xl**: 64px — Page-level spacing
 
+> ⚠️ Tailwind 4 collision: do **not** register `--spacing-2xl` / `--spacing-3xl` (or `--spacing-Nxl` for any N ≥ 2) in `globals.css` `@theme`. Those keys shadow built-in utilities like `max-w-2xl` / `gap-2xl` and silently break every page (commit d785f12). Use arbitrary values such as `gap-[48px]` / `p-[64px]` instead. Guarded by `src/app/__tests__/theme-tokens.test.ts`.
+
 ## Border Radius
 
 - **sm** (4px): Badges, small tags
