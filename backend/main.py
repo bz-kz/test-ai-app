@@ -1,21 +1,45 @@
-"""FastAPI application entry point."""
+"""FastAPI アプリケーションエントリポイント。"""
 
 import logging
 import os
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.infrastructure.llm import OllamaLocalLLMClient
+from app.interfaces.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+    unhandled_exception_handler,
+)
+from app.interfaces.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AI Medical Record Generator API",
-    docs_url=None,  # OpenAPIドキュメントは本番では非公開
+    docs_url=None,  # OpenAPI ドキュメントは本番では非公開
     redoc_url=None,
 )
+
+# ---------------------------------------------------------------------------
+# グローバル例外ハンドラ登録
+# ---------------------------------------------------------------------------
+
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(
+    RequestValidationError,
+    request_validation_exception_handler,  # type: ignore[arg-type]
+)
+app.add_exception_handler(Exception, unhandled_exception_handler)
+
+
+# ---------------------------------------------------------------------------
+# 既存エンドポイント: /ping, /health
+# ---------------------------------------------------------------------------
 
 
 class PingResponse(BaseModel):
@@ -34,7 +58,11 @@ async def ping() -> PingResponse:
     return PingResponse(status="ok")
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    responses={503: {"model": ErrorResponse, "description": "サービス劣化状態"}},
+)
 async def health() -> Response:
     """Postgres と llm が両方到達可能なときのみ 200 を返す。"""
     database_url = os.getenv("DATABASE_URL", "")

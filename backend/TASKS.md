@@ -11,11 +11,12 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title             | Status      | Gates Touched          | Owner     |
-| ------- | ----------------- | ----------- | ---------------------- | --------- |
-| INF-001 | Runtime Topology  | done        | G0                     | Generator |
-| BE-001  | Inference Adapter | done        | G1, G2, G3, G4, G5, G7 | Generator |
-| BE-002  | Persistence       | done        | G1, G2, G3, G4, G6, G7 | Generator |
+| ID      | Title             | Status | Gates Touched          | Owner     |
+| ------- | ----------------- | ------ | ---------------------- | --------- |
+| INF-001 | Runtime Topology  | done   | G0                     | Generator |
+| BE-001  | Inference Adapter | done   | G1, G2, G3, G4, G5, G7 | Generator |
+| BE-002  | Persistence       | done   | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-003  | API Surface       | qa     | G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -111,3 +112,31 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** infrastructure, usecases
 - **Status:** done
+
+---
+
+## API Surface (BE-003)
+
+- **Goal:** Anchor the public HTTP shape so feature endpoints can be built consistently: router skeleton, normalised error envelope, Pydantic conventions demonstrated, and existing `/health`+`/ping` behaviour preserved.
+- **Inputs:**
+  - backend/SPEC.md#api-surface
+  - backend/SPEC.md#layer-boundaries
+  - frontend/SPEC.md#frontend-mission
+  - .claude/rules/local-llm-and-phi.md
+  - backend/main.py — current `/ping`, `/health` definitions; do not regress
+- **Acceptance:**
+  - [ ] `app/interfaces/routers/` exists with an `__init__.py`; routers mountable via `app.include_router(...)`.
+  - [ ] Global exception handler returns `{ "code": str, "message": str }` for HTTPException, RequestValidationError (422), and unhandled Exception (500).
+  - [ ] `code` values are stable machine identifiers; `message` MUST NOT echo PHI from request body.
+  - [ ] All current endpoints declare `response_model=`; `/health` and `/ping` continue to behave per BE-001 contract.
+  - [ ] OpenAPI reachable at `/openapi.json` in dev; `docs_url=None` / `redoc_url=None` stay set.
+  - [ ] `ErrorResponse(BaseModel)` is the canonical error type referenced by every error handler.
+  - [ ] Error handlers log through project logger; body fields passed through `mask_phi` before any logger call; 500 handler logs at `error` level with request path, body scrubbed.
+  - [ ] Unit tests cover: HTTPException → envelope; 422 → `code="validation_error"`; unhandled → `code="internal_error"`, no PHI leakage; response_model strips extra fields.
+- **Out-of-scope:** GraphQL, WebSocket, SSE, auth/authorization, feature endpoints (patient/encounter/record), CORS hardening beyond current state.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; error envelopes and 5xx logs MUST NOT include PHI from request body; use `mask_phi` for any value from request body that may carry PHI.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** interfaces
+- **Status:** qa
