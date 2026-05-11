@@ -18,7 +18,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-002  | Persistence         | done   | G1, G2, G3, G4, G6, G7 | Generator |
 | BE-003  | API Surface         | done   | G1, G2, G3, G4, G6, G7 | Generator |
 | BE-004  | Patient endpoints   | done   | G1, G2, G3, G4, G6, G7 | Generator |
-| BE-005  | Encounter endpoints | qa     | G1, G2, G3, G4, G6, G7 | Generator |
+| BE-005  | Encounter endpoints | done   | G1, G2, G3, G4, G6, G7 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -208,4 +208,4 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; encounter linkage to a patient is PHI per `.claude/rules/local-llm-and-phi.md` §3. Mask before logger; never echo any UUID in error envelopes; audit `meta_json` stays `"{}"`.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** usecases (extend), interfaces (new router)
-- **Status:** qa
+- **Status:** done
