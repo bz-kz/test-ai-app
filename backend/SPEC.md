@@ -79,7 +79,7 @@ Sub-spec for the FastAPI / Python 3.12+ backend. Extends, never overrides, the r
   - [ ] All endpoints declared with FastAPI `response_model=`; no untyped responses.
   - [ ] Errors normalised to `{ "code": str, "message": str }`; messages never include PHI.
   - [ ] `/health` returns 200 when Postgres and llm are both reachable; 503 otherwise.
-  - [ ] OpenAPI is generated; the `docs/` static site is NOT exposed in production builds.
+  - [ ] OpenAPI schema is generated at `/openapi.json`; the FastAPI interactive `/docs` (Swagger UI) and `/redoc` sites are NOT mounted (`docs_url=None`, `redoc_url=None`). Rationale: this project is a local-only PoC per `CLAUDE.md` §2 Scope — there is no dev/prod build split, and the interactive docs UI is not user-facing.
 - **Out-of-scope:** GraphQL, WebSocket transport (if needed, file an ADR).
 - **Open-questions:** _(none)_
 - **Gates Touched:** G1, G2, G6, G7
