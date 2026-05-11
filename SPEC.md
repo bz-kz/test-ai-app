@@ -49,17 +49,41 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 - **Gates Touched:** G4, G5, G7
 - **Affected Layers:** infrastructure, usecases
 
+## ASR Layer Contract
+
+- **Goal:** Fix the API and behaviour the backend assumes from the local ASR service so voice input can be implemented, mocked, and replaced without touching consumers, on the same shape as `#inference-layer-contract` for the LLM.
+- **Inputs:**
+  - docs/adr/0001-voice-input-and-local-asr.md — variant pick, hardware footprint, network boundary.
+  - .claude/rules/local-llm-and-phi.md — non-negotiable boundaries; audio/voice extension lands once ADR-0001 is `Accepted`.
+- **Acceptance:**
+  - [ ] Interface `LocalASRClient` lives in `backend/app/infrastructure/asr/` with `transcribe(audio: AudioPayload, params: TranscribeParams | None) -> TranscribeResponse`. The interface MUST NOT expose a streaming variant in v1 (out of scope per ADR-0001).
+  - [ ] Concrete `WhisperCppLocalASRClient` targets `http://asr:8080` (whisper-server default) and the model name from configuration; configuration values `ASR_BASE_URL`, `ASR_MODEL`, `ASR_TIMEOUT_S` are read from environment, never hardcoded.
+  - [ ] Test-only `FakeLocalASRClient` is the default in unit tests; deterministic outputs from a fixture map keyed by input-bytes hash.
+  - [ ] Single supported variant: `whisper.cpp medium-q5_0` GGML. Switching variants (e.g. to `kotoba-whisper-v2.0-ggml`) requires a follow-up ADR per ADR-0001's `ASR_MODEL` discipline.
+  - [ ] Timeout default: `ASR_TIMEOUT_S=90` (cover RTF ≤1.5× of a 60 s clip on the reference CPU). Cancellable via `asyncio.Task.cancel()`.
+  - [ ] Accepted input: WebM/Opus container, single channel, ≤60 s wall-clock duration, ≤2 MB payload. Server-side resample to whisper-native 16 kHz mono is the ASR service's responsibility, not the backend's.
+  - [ ] On non-200 or timeout, the client raises a typed `ASRError` carrying a masked context, never the raw audio bytes or transcript. `ASRError` mirrors the `InferenceError` discipline from `#inference-layer-contract`.
+  - [ ] Audio bytes are never persisted to disk past the request lifetime. The backend MUST use `tempfile.SpooledTemporaryFile` (in-memory below threshold; auto-deleted otherwise) or stream the multipart body straight to the ASR client without writing to a named file.
+- **Out-of-scope:** Streaming/chunked transcription, diarization, multi-speaker separation, speaker identification, language other than Japanese, transcript versioning, transcript persistence on the backend (the frontend appends to `clinical_input` and discards on submit).
+- **Open-questions:** _(none — ADR-0001 closes them)_
+- **Inference Impact:** yes; ASR is a second inference path with its own model and latency budget. Compute budget independent of LLM but co-resident.
+- **Data Sensitivity:** PHI; audio bytes are PHI per ADR-0001 and the pending §3 update; clients MUST mask any logged reference to audio length, transcript, or filename. Audio bytes MUST NOT appear in logs, error envelopes, or stack traces.
+- **Gates Touched:** G0, G4, G5, G7
+- **Affected Layers:** infrastructure, usecases
+
 ## Hardware Assumptions
 
 - **Goal:** State the baseline so latency and memory budgets in feature Specs are interpretable.
-- **Inputs:** _(none)_
+- **Inputs:**
+  - docs/adr/0001-voice-input-and-local-asr.md — co-resident `asr` service raises the Docker memory floor.
 - **Acceptance:**
-  - [ ] Reference dev hardware: 8-core CPU, 24 GB system RAM with Docker Desktop allocated ≥12 GB for the `llm` container, optional single GPU with ≥10 GB VRAM (e.g. RTX 4070) when offload is available.
-  - [ ] CPU-only operation supported on the reference RAM allocation above; latencies SHOULD assume ≥3× slowdown vs GPU baseline.
+  - [ ] Reference dev hardware: 8-core CPU, 24 GB system RAM with Docker Desktop allocated ≥13 GB to cover `llm` + `asr` co-resident on the internal network, optional single GPU with ≥10 GB VRAM (e.g. RTX 4070) when offload is available. 16 GB Docker allocation is recommended for headroom and for the kotoba-whisper variant swap path described in ADR-0001.
+  - [ ] CPU-only operation supported on the reference RAM allocation above; latencies SHOULD assume ≥3× slowdown vs GPU baseline for `gemma4:e4b`, and the ASR RTF budget in `#asr-layer-contract` applies independently.
   - [ ] Latency budget for `gemma4:e4b` first-token: p95 ≤1 s; total response p95 ≤6 s for 1k output tokens.
   - [ ] Memory footprint of the publisher-supplied `gemma4:e4b` Ollama tag: ≈10 GiB total system memory at runtime (≈9.4 GiB weights + ≈224 MiB KV cache + ≈125 MiB compute graph). The tag is loaded at its publisher-supplied default precision; the project pins this tag and does NOT assume a Q4_0 (or any other) re-quantization. A custom Modelfile to re-quantize is out-of-scope and would require an ADR.
+  - [ ] Memory footprint of the pinned ASR variant (`whisper.cpp medium-q5_0` GGML, default): ≈0.7–0.9 GiB resident at idle, peak ≈1.0 GiB during a single 60 s clip. Co-resident total budget (gemma 10 GiB + ASR 1 GiB + backend/postgres/frontend/Docker overhead 2 GiB) = ≈13 GiB; this is the floor for the Docker Desktop memory slider.
   - [ ] On a machine with no GPU or insufficient VRAM, the same footprint is paid in system RAM rather than VRAM; the Docker Desktop memory allocation MUST be sized for the larger of the two cases.
-- **Out-of-scope:** Multi-GPU, Apple-Silicon-specific tuning (track in a follow-up ADR if needed), custom Modelfile re-quantization of `gemma4:e4b`.
+- **Out-of-scope:** Multi-GPU, Apple-Silicon-specific tuning (track in a follow-up ADR if needed), custom Modelfile re-quantization of `gemma4:e4b`, ASR variants other than the one pinned by ADR-0001.
 - **Open-questions:** _(none)_
 - **Gates Touched:** G5
 
@@ -88,9 +112,10 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 - **Language:** Code identifiers and API fields in English. UI labels in Japanese. Code comments in Japanese (per CLAUDE.md). Docs in English.
 - **Type safety:** No `any` (TS) and no untyped dicts crossing layer boundaries (Python). Pydantic at every interface boundary.
 - **Architecture:** Frontend is Atomic Design over an Onion-style logic split (services/hooks). Backend is DDD with `domain → usecases → infrastructure → interfaces`.
-- **PHI:** Governed by `.claude/rules/local-llm-and-phi.md`. Masked in logs, never persisted in browser storage, never sent to a hosted LLM.
+- **PHI:** Governed by `.claude/rules/local-llm-and-phi.md`. Masked in logs, never persisted in browser storage, never sent to a hosted LLM. Audio/voice recordings of patient narrative are PHI on the same footing as `clinical_input` and `draft.content` (binding once ADR-0001 is `Accepted` and §3 is updated).
+- **ASR egress:** All ASR calls flow `frontend → backend → asr` on the internal compose network. The browser MUST NOT call any ASR endpoint directly. The Web Speech API and any hosted-ASR SDK are forbidden by the same egress reasoning that already forbids hosted LLM SDKs (see ADR-0001).
 - **Authentication:** Every PHI-returning endpoint requires the `X-Clinician-Id` header per the Authentication (PoC) Block. Production-grade auth is a separate Block.
-- **Determinism for tests:** All inference paths use `FakeLocalLLMClient` in unit tests; integration tests against the real `llm` container are tagged and excluded from the default `pytest`/`vitest` run.
+- **Determinism for tests:** All inference paths use `FakeLocalLLMClient` in unit tests; ASR paths use `FakeLocalASRClient`. Integration tests against the real `llm` / `asr` containers are tagged and excluded from the default `pytest`/`vitest` run.
 
 ## Authentication (PoC)
 
@@ -130,3 +155,4 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 - Local-dev runbook: `docs/runbook-local-dev.md`
 - ADR index: `NOTES.md`
 - PHI/LLM rule: `.claude/rules/local-llm-and-phi.md`
+- Voice/ASR decision: `docs/adr/0001-voice-input-and-local-asr.md`

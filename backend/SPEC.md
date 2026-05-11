@@ -53,6 +53,29 @@ Sub-spec for the FastAPI / Python 3.12+ backend. Extends, never overrides, the r
 - **Gates Touched:** G4, G5, G7
 - **Affected Layers:** infrastructure, usecases
 
+## ASR Adapter
+
+- **Goal:** Make the local-Whisper adapter a thin, replaceable component the rest of the backend talks to without knowing the wire format. Same shape as `#inference-adapter` for the LLM.
+- **Inputs:**
+  - SPEC.md#asr-layer-contract
+  - docs/adr/0001-voice-input-and-local-asr.md
+  - .claude/rules/local-llm-and-phi.md
+- **Acceptance:**
+  - [ ] `app/infrastructure/asr/__init__.py` exports `LocalASRClient` (Protocol/ABC), `TranscribeParams`, `TranscribeResponse`, `AudioPayload`, `ASRError`, and a `make_asr_client()` factory mirroring `make_llm_client()`.
+  - [ ] `WhisperCppLocalASRClient` implements `LocalASRClient`; talks to `http://asr:8080` via whisper-server's `/inference` (or equivalent) endpoint over multipart form-data. The concrete class name MUST NOT be referenced from `usecases` — only the factory and the Protocol cross the boundary.
+  - [ ] `FakeLocalASRClient` is the default in unit tests; deterministic outputs from a fixture map keyed by `sha256(audio.bytes)[:16]`.
+  - [ ] Configuration values `ASR_BASE_URL`, `ASR_MODEL`, `ASR_TIMEOUT_S` are read from environment, not hardcoded. Defaults match ADR-0001 (`ASR_MODEL=ggml-medium-q5_0.bin`, `ASR_TIMEOUT_S=90`).
+  - [ ] `transcribe(...)` accepts `AudioPayload` (bytes + content-type) and a `language: str = "ja"` parameter on `TranscribeParams`. The implementation passes `language=ja` to whisper-server so vanilla Whisper does not fall back to English.
+  - [ ] Errors raise `ASRError` with a masked context. The raw audio bytes, the filename, and the transcript MUST NOT appear in `__str__` or `__repr__`. Mirrors `InferenceError` from `app/infrastructure/llm/errors.py`.
+  - [ ] Layer rule: `grep -RnE '^from app\.infrastructure\.asr' backend/app/{domain,usecases,interfaces}` returns hits only from `usecases/di.py` and `usecases/transcribe.py` (the only consumers).
+  - [ ] No persistence: the adapter MUST receive `AudioPayload` as in-memory bytes (or a `SpooledTemporaryFile` reference) and MUST NOT write the audio to a named file on disk.
+- **Out-of-scope:** Streaming transcription (out of scope per ADR-0001), diarization, language detection, transcript translation, batch processing.
+- **Open-questions:** _(none — ADR-0001 closes them)_
+- **Inference Impact:** yes
+- **Data Sensitivity:** PHI
+- **Gates Touched:** G4, G5, G7
+- **Affected Layers:** infrastructure, usecases
+
 ## Persistence
 
 - **Goal:** Define the storage shape for patient/encounter/record data so PHI columns are explicit and masking-on-log is enforceable.
@@ -84,6 +107,34 @@ Sub-spec for the FastAPI / Python 3.12+ backend. Extends, never overrides, the r
 - **Open-questions:** _(none)_
 - **Gates Touched:** G1, G2, G6, G7
 - **Affected Layers:** interfaces
+
+## Transcribe Endpoint
+
+- **Goal:** Expose `POST /encounters/{encounter_id}/transcribe` that accepts a single short audio clip from the frontend, routes it through `LocalASRClient`, and returns the Japanese transcript. The endpoint is stateless — no DB write, no audio retention. It is a thin HTTP wrapper over the ASR adapter.
+- **Inputs:**
+  - SPEC.md#asr-layer-contract — wire contract for `LocalASRClient`
+  - backend/SPEC.md#asr-adapter — adapter shape and error type
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#authentication — `get_current_clinician` dependency required because audio is PHI
+  - docs/adr/0001-voice-input-and-local-asr.md
+- **Acceptance:**
+  - [ ] Endpoint `POST /encounters/{encounter_id}/transcribe` declared in `app/interfaces/routers/transcribe.py` (new router file) with `response_model=TranscribeRead`.
+  - [ ] Request body: `multipart/form-data` with one file field `audio` (WebM/Opus container; backend rejects other content-types with 415).
+  - [ ] Server-side limits enforced before the ASR call: payload ≤2 MB, content-type ∈ `{audio/webm, audio/webm;codecs=opus}`, encounter exists (404 `encounter_not_found`).
+  - [ ] On success returns 200 `{ "text": str, "encounter_id": UUID, "duration_seconds": float | None }`. `duration_seconds` is whatever the ASR backend reports; null if not available.
+  - [ ] On `ASRError` returns 503 with `{ "code": "transcription_unavailable", "message": "音声の文字起こしに失敗しました。" }`. Mirrors the BE-006 `inference_unavailable` mapping for `InferenceError`.
+  - [ ] On timeout returns 504 `{ "code": "transcription_timeout", "message": "音声の文字起こしがタイムアウトしました。" }`.
+  - [ ] Endpoint requires `clinician_id: UUID = Depends(get_current_clinician)`; missing/malformed header returns 401 per `#authentication`.
+  - [ ] PHI: audio bytes are never written to logs. Filename, if present in the multipart part, is dropped at the router boundary (never logged, never stored). The transcript is logged only via `mask_phi(text)` at DEBUG level; INFO logs use `len(text)` and `short_id(encounter_id)` only.
+  - [ ] No DB write. No `audit_log` row is written for transcription (out of scope for v1 — voice input is a UI affordance; the audit trail of clinical content lives on the resulting `record_draft`).
+  - [ ] Layer rule: `grep -RnE '^from app\.infrastructure' backend/app/interfaces/routers/transcribe.py` → 0 hits.
+  - [ ] Usecase: `app/usecases/transcribe.py` exports `transcribe_audio(encounter_id, clinician_id, audio, asr_client, encounter_repo)`; verifies encounter exists; calls `asr_client.transcribe(...)`; returns the transcript. `ASRError` propagates as-is.
+- **Out-of-scope:** Persistence of audio or transcripts (frontend appends to `clinical_input` and discards on submit). Audit-log row for transcribe (audit happens on the resulting draft). Streaming transcription. Speaker diarization. Audio editing / trimming on the backend.
+- **Open-questions:** _(none — ADR-0001 closes them)_
+- **Inference Impact:** yes; ASR path; `whisper.cpp medium-q5_0`; `ASR_TIMEOUT_S=90`; co-resident with `gemma4:e4b`.
+- **Data Sensitivity:** PHI; audio bytes and transcript are PHI per ADR-0001; never echoed in logs at INFO level; never persisted past the request lifetime.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** usecases (new `transcribe.py`), interfaces (new router `transcribe.py`), infrastructure (consumed via `LocalASRClient` per `#asr-adapter`)
 
 ## Authentication
 

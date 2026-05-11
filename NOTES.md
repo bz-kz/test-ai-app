@@ -19,6 +19,6 @@ This file is the index of architecture decisions for the project. Decision recor
 
 ## Index
 
-| ID                                                | Title | Status | Date |
-| ------------------------------------------------- | ----- | ------ | ---- |
-| _(no ADRs yet — first decision will be ADR-0001)_ |       |        |      |
+| ID                                                     | Title                             | Status   | Date       |
+| ------------------------------------------------------ | --------------------------------- | -------- | ---------- |
+| [ADR-0001](docs/adr/0001-voice-input-and-local-asr.md) | Voice input and local ASR service | Proposed | 2026-05-12 |
