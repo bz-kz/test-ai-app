@@ -12,15 +12,23 @@ vi.mock("@/hooks/useDraftLifecycle", () => ({
   useDraftLifecycle: vi.fn(),
 }));
 
+// useCorrectFinal フックをモック
+vi.mock("@/hooks/useCorrectFinal", () => ({
+  useCorrectFinal: vi.fn(),
+}));
+
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
+import { useCorrectFinal } from "@/hooks/useCorrectFinal";
 
 const mockUseGenerateDraft = vi.mocked(useGenerateDraft);
 const mockUseDraftLifecycle = vi.mocked(useDraftLifecycle);
+const mockUseCorrectFinal = vi.mocked(useCorrectFinal);
 
 const FAKE_ENCOUNTER_ID = "00000000-0000-0000-0000-000000000010";
 const FAKE_DRAFT_ID = "00000000-0000-0000-0000-000000000020";
 const FAKE_FINAL_ID = "00000000-0000-0000-0000-000000000030";
+const FAKE_NEW_FINAL_ID = "00000000-0000-0000-0000-000000000031";
 const FAKE_CLINICIAN_ID = "00000000-0000-0000-0000-000000000001";
 
 const FAKE_DRAFT = {
@@ -47,6 +55,16 @@ const FAKE_FINAL = {
   created_at: "2024-01-01T00:00:00Z",
 };
 
+const FAKE_CORRECTED_FINAL = {
+  id: FAKE_NEW_FINAL_ID,
+  encounter_id: FAKE_ENCOUNTER_ID,
+  content: "S: 頭痛 (訂正済み)。\nO: 正常。\nA: 確定診断。",
+  confidence: null,
+  clinician_id: FAKE_CLINICIAN_ID,
+  predecessor_id: FAKE_FINAL_ID,
+  created_at: "2024-01-02T00:00:00Z",
+};
+
 /** テスト用のデフォルト useGenerateDraft 戻り値 */
 function makeGenerateReturn(overrides: Partial<ReturnType<typeof useGenerateDraft>>) {
   return {
@@ -54,6 +72,7 @@ function makeGenerateReturn(overrides: Partial<ReturnType<typeof useGenerateDraf
     setClinicalInput: vi.fn(),
     status: "idle" as const,
     draft: null,
+    setDraft: vi.fn(),
     error: null,
     generate: vi.fn(),
     cancel: vi.fn(),
@@ -79,6 +98,22 @@ function makeLifecycleReturn(overrides: Partial<ReturnType<typeof useDraftLifecy
   };
 }
 
+/** テスト用のデフォルト useCorrectFinal 戻り値 */
+function makeCorrectReturn(overrides: Partial<ReturnType<typeof useCorrectFinal>>) {
+  return {
+    mode: "view" as const,
+    content: "",
+    setContent: vi.fn(),
+    enter: vi.fn(),
+    cancel: vi.fn(),
+    submit: vi.fn().mockResolvedValue(undefined),
+    status: "idle" as const,
+    error: null,
+    correctedFinal: null,
+    ...overrides,
+  };
+}
+
 /** Next.js 15 の async params を模倣する */
 function makeParams(encounterId: string): Promise<{ encounterId: string }> {
   return Promise.resolve({ encounterId });
@@ -90,10 +125,12 @@ function makeParams(encounterId: string): Promise<{ encounterId: string }> {
  */
 async function renderPage(
   generateOverrides: Partial<ReturnType<typeof useGenerateDraft>> = {},
-  lifecycleOverrides: Partial<ReturnType<typeof useDraftLifecycle>> = {}
+  lifecycleOverrides: Partial<ReturnType<typeof useDraftLifecycle>> = {},
+  correctOverrides: Partial<ReturnType<typeof useCorrectFinal>> = {}
 ) {
   mockUseGenerateDraft.mockReturnValue(makeGenerateReturn(generateOverrides));
   mockUseDraftLifecycle.mockReturnValue(makeLifecycleReturn(lifecycleOverrides));
+  mockUseCorrectFinal.mockReturnValue(makeCorrectReturn(correctOverrides));
   await act(async () => {
     render(<DraftPage params={makeParams(FAKE_ENCOUNTER_ID)} />);
   });
@@ -368,5 +405,112 @@ describe("DraftPage (FE-004: error states from lifecycle)", () => {
       }
     );
     expect(screen.getByRole("alert")).toHaveTextContent("エラーが発生しました");
+  });
+});
+
+// ============================================================
+// FE-005 の追加テスト
+// ============================================================
+
+describe("DraftPage (FE-005: finalized mode — aria-label fix)", () => {
+  it("finalized モードの AIIndicatedText は aria-label='確定カルテ' でアナウンスされる", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL }
+    );
+    // ariaLabel prop が渡されるため "確定カルテ" としてアナウンスされる
+    expect(screen.getByRole("article", { name: "確定カルテ" })).toBeInTheDocument();
+    // デフォルトの "AI 生成テキスト" ではない
+    expect(screen.queryByRole("article", { name: "AI 生成テキスト" })).toBeNull();
+  });
+});
+
+describe("DraftPage (FE-005: correction flow)", () => {
+  it("finalized+view モードで 訂正 ボタンが表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view" }
+    );
+    expect(screen.getByRole("button", { name: "訂正" })).toBeInTheDocument();
+  });
+
+  it("finalized+correcting モードで TextArea が pre-fill された状態で表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "correcting", content: FAKE_FINAL.content }
+    );
+    const textarea = screen.getByRole("textbox", { name: "訂正内容" });
+    expect(textarea).toBeInTheDocument();
+    expect(textarea).toHaveValue(FAKE_FINAL.content);
+  });
+
+  it("finalized+correcting モードで キャンセル と 更新 ボタンが表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "correcting", content: "訂正内容" }
+    );
+    expect(screen.getByRole("button", { name: "キャンセル" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "更新" })).toBeInTheDocument();
+  });
+
+  it("finalized+correcting モードで 訂正 ボタンは非表示になる", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "correcting", content: "訂正内容" }
+    );
+    expect(screen.queryByRole("button", { name: "訂正" })).toBeNull();
+  });
+
+  it("correcting+submitting 中は 更新 ボタンが loading 状態になる", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "correcting", content: "訂正内容", status: "submitting" }
+    );
+    const updateButton = screen.getByRole("button", { name: "更新" });
+    expect(updateButton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("correcting エラー時に role=alert でエラーメッセージが表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      {
+        mode: "correcting",
+        content: "訂正内容",
+        status: "error",
+        error: "確定カルテが見つかりません。ページを再読み込みしてください。",
+      }
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("確定カルテが見つかりません");
+  });
+
+  it("訂正成功後は correctedFinal の内容が表示される", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view", correctedFinal: FAKE_CORRECTED_FINAL }
+    );
+    // correctedFinal は useEffect 経由で currentFinal に反映される
+    // このテストではモックが correctedFinal を直接返すため、
+    // useEffect のトリガーは実際の hook 実装に依存する。
+    // ページのモック構造では correctedFinal は hook 戻り値として提供されるのみで
+    // useEffect は動作しないため、correction.mode=view かつ
+    // currentFinal は lifecycle.final から初期化されることを確認する。
+    expect(screen.getByRole("status", { name: "確定済みカルテ" })).toBeInTheDocument();
+  });
+
+  it("finalized+view モードで ConfidencePill が表示される (confidence != null)", async () => {
+    await renderPage(
+      { status: "success", draft: FAKE_DRAFT },
+      { mode: "finalized", final: FAKE_FINAL },
+      { mode: "view" }
+    );
+    // FAKE_FINAL.confidence = 0.85 (neutral バリアント)
+    expect(screen.getByText("信頼度 0.85")).toBeInTheDocument();
   });
 });

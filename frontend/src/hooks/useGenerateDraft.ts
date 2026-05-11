@@ -28,6 +28,12 @@ export interface UseGenerateDraftReturn {
   status: GenerateDraftStatus;
   /** 生成成功時の下書き (PHI) */
   draft: RecordDraft | null;
+  /**
+   * 外部から下書きを直接置き換えるセッター。
+   * useDraftLifecycle の onDraftUpdated コールバックから呼ばれ、
+   * saveEdit 成功後に画面を再レンダリングする (ページリフレッシュ不要)。
+   */
+  setDraft: (next: RecordDraft | null) => void;
   /** ユーザー向け日本語エラーメッセージ (PHI なし) */
   error: string | null;
   /** 下書き生成を開始する (ユーザー起点のアクション、デバウンスなし) */
@@ -156,6 +162,7 @@ export function useGenerateDraft(encounterId: string): UseGenerateDraftReturn {
     setClinicalInput,
     status,
     draft,
+    setDraft,
     error,
     generate,
     cancel,

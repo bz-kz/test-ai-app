@@ -7,8 +7,14 @@
  * - 状態は React state のみに保持し、localStorage / sessionStorage / URL には書き込まない。
  *
  * 引数:
- *   draft        — useGenerateDraft が提供する現在の下書き (null のときは操作不可)
- *   clinicianId  — 臨床医 UUID (現時点ではプレースホルダー; 認証 Block で置き換える)
+ *   draft           — useGenerateDraft が提供する現在の下書き (null のときは操作不可)
+ *   clinicianId     — 臨床医 UUID (現時点ではプレースホルダー; 認証 Block で置き換える)
+ *   onDraftUpdated  — saveEdit 成功時に呼ばれるコールバック。
+ *                     呼び出し元 (ページ) がこれを gen.setDraft に繋ぐことで、
+ *                     ページリフレッシュなしに AIIndicatedText が最新内容を表示できる。
+ *                     Option (b) を選択した理由: フックが戻り値で draft を返すより、
+ *                     コールバックで「変更があったときだけ通知」する方が依存方向が
+ *                     一方向に保たれ、テストでの検証も簡潔になる。
  *
  * 戻り値は UseDraftLifecycleReturn 参照。
  */
@@ -21,6 +27,11 @@ import type { RecordFinal } from "@/types/recordFinal";
 
 export type DraftLifecycleMode = "view" | "editing" | "finalized";
 export type DraftLifecycleStatus = "idle" | "saving" | "finalizing" | "error";
+
+export interface UseDraftLifecycleOptions {
+  /** saveEdit 成功時に呼ばれるコールバック。更新後の RecordDraft を受け取る。 */
+  onDraftUpdated?: (next: RecordDraft) => void;
+}
 
 export interface UseDraftLifecycleReturn {
   /** 現在のモード */
@@ -66,10 +77,12 @@ function toErrorMessage(kind: string): string {
  *
  * @param draft        現在の下書き (useGenerateDraft から渡す; null のときは操作不可)
  * @param clinicianId  臨床医 UUID
+ * @param opts         オプション (onDraftUpdated など)
  */
 export function useDraftLifecycle(
   draft: RecordDraft | null,
-  clinicianId: string
+  clinicianId: string,
+  opts?: UseDraftLifecycleOptions
 ): UseDraftLifecycleReturn {
   const [mode, setMode] = useState<DraftLifecycleMode>("view");
   const [editContent, setEditContent] = useState<string>("");
@@ -116,12 +129,13 @@ export function useDraftLifecycle(
 
       switch (result.kind) {
         case "updated":
-          // 成功: view モードに戻る。draft の更新は親が担う (返り値なし — 親に通知が必要な場合は FE-005 で拡張)
-          // ここでは draft prop を直接変更せず、ページ側がフックを合成して状態を扱う
+          // 成功: view モードに戻り、onDraftUpdated コールバックで更新後の下書きを親に通知する。
+          // ページは gen.setDraft をコールバックとして渡し、AIIndicatedText を即座に更新する。
           setMode("view");
           setEditContent("");
           setStatus("idle");
           setError(null);
+          opts?.onDraftUpdated?.(result.draft);
           break;
 
         case "draft_not_found":
@@ -147,7 +161,7 @@ export function useDraftLifecycle(
       setStatus("error");
       setError(toErrorMessage("error"));
     }
-  }, [draft, editContent, clinicianId]);
+  }, [draft, editContent, clinicianId, opts]);
 
   const approve = useCallback(async () => {
     if (draft === null) return;

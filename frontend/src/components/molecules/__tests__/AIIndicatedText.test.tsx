@@ -43,4 +43,23 @@ describe("AIIndicatedText molecule", () => {
     const article = screen.getByRole("article");
     expect(article.className).toMatch(/border-l-4/);
   });
+
+  it("ariaLabel prop overrides the default 'AI 生成テキスト' on the article element", () => {
+    render(<AIIndicatedText ariaLabel="確定カルテ">本文</AIIndicatedText>);
+    expect(screen.getByRole("article", { name: "確定カルテ" })).toBeInTheDocument();
+    // デフォルトのラベルは存在しない
+    expect(screen.queryByRole("article", { name: "AI 生成テキスト" })).toBeNull();
+  });
+
+  it("ariaLabel prop can be combined with a custom label caption independently", () => {
+    render(
+      <AIIndicatedText label="確定カルテ" ariaLabel="確定カルテ">
+        本文
+      </AIIndicatedText>
+    );
+    // aria-label は ariaLabel prop の値
+    expect(screen.getByRole("article", { name: "確定カルテ" })).toBeInTheDocument();
+    // label キャプションも表示される
+    expect(screen.getByText("確定カルテ")).toBeInTheDocument();
+  });
 });

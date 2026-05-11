@@ -11,12 +11,13 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID     | Title                             | Status | Gates Touched              | Owner     |
-| ------ | --------------------------------- | ------ | -------------------------- | --------- |
-| FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002 | Patient Search by MRN             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003 | Record Draft generation UI        | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004 | Draft edit and finalize UI        | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID     | Title                              | Status      | Gates Touched              | Owner     |
+| ------ | ---------------------------------- | ----------- | -------------------------- | --------- |
+| FE-001 | Frontend foundation + Button atom  | done        | G1, G2, G3, G6, G7         | Generator |
+| FE-002 | Patient Search by MRN              | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003 | Record Draft generation UI         | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004 | Draft edit and finalize UI         | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005 | Final correction UI + FE-004 fixes | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
@@ -153,6 +154,41 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; draft.content and final.content are free-text clinical narrative; never in console.\*, never in browser storage, never in URL; operational reads (page render) are explicitly requested by the caller per .claude/rules/local-llm-and-phi.md §4.
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** molecules (ConfidencePill), hooks (useDraftLifecycle), services (drafts extended), types (recordFinal), app (page extended)
+
+---
+
+## Final correction UI + FE-004 follow-ups (FE-005)
+
+- **Goal:** Make the finalized record correctable from the UI by consuming BE-008's correction-chain endpoints, and fix two ergonomics gaps the Evaluator flagged on FE-004: (a) `AIIndicatedText` aria-label hardcode, (b) `saveEdit` not propagating the updated draft back to visible state.
+- **Inputs:**
+  - frontend/SPEC.md#ai-output-patterns — Regenerate / Edit / Approve action set; Correction is the natural successor for record_final corrections per the clinical lifecycle
+  - SPEC.md#domain-glossary — `record_final`, `predecessor_id` for correction lineage
+  - backend/app/interfaces/routers/finals.py — POST `/finals/{final_id}/correct` body `{content, clinician_id}`, response 201 `FinalRead`; GET `/finals/{final_id}/chain` returns `list[FinalRead]`; 404 `final_not_found`; 422 validation
+  - Existing: Button, TextArea, AIIndicatedText, ConfidencePill, useDraftLifecycle, useGenerateDraft, apiFetch, maskPhi, RecordDraft, RecordFinal types
+- **Acceptance:**
+  - [x] `AIIndicatedText` gains `ariaLabel?: string` prop; when provided, overrides default `aria-label="AI 生成テキスト"`; backwards-compatible.
+  - [x] Existing 7 AIIndicatedText tests green; ≥2 new tests cover `ariaLabel` prop override.
+  - [x] `useGenerateDraft` exposes `setDraft: (next: RecordDraft | null) => void`; existing tests still green.
+  - [x] `useDraftLifecycle` accepts `onDraftUpdated?: (next: RecordDraft) => void` callback; `saveEdit` success calls it with the updated draft; ≥1 new test confirms this.
+  - [x] Page wires `useDraftLifecycle({ ..., onDraftUpdated: gen.setDraft })`; after `saveEdit` success, AIIndicatedText re-renders with new content without refresh.
+  - [x] `services/finals.ts` added with `correctRecordFinal` and `getFinalChain`; 6-8 unit tests mocking `apiFetch`.
+  - [x] `hooks/useCorrectFinal.ts` added; returns `{ mode, content, setContent, enter, cancel, submit, status, error, correctedFinal }`; AbortController for in-flight cancel; tests cover state transitions and error paths.
+  - [x] Page finalized state: renders `AIIndicatedText` with `ariaLabel="確定カルテ"`, optional `ConfidencePill`, and a 訂正 Button.
+  - [x] Clicking 訂正 shows TextArea pre-filled with current final content + キャンセル / 更新 buttons.
+  - [x] Submit success swaps `currentFinal` to the new `RecordFinal` and returns to finalized view.
+  - [x] Submit error renders JP error string in `role="alert"`.
+  - [x] Page integration tests extended: finalized shows 訂正 button; correcting mode pre-fills TextArea; submit calls service and updates display; error paths render correctly; AIIndicatedText announced as "確定カルテ".
+  - [x] Cross-cutting greps clean: no `fetch` outside services; no `console.*`; no PHI in storage/URL; no `any`; no `dangerouslySetInnerHTML`.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — all tests pass.
+  - [x] G4 security-check — no PHI in logs or storage; no hosted-LLM SDKs.
+- **Out-of-scope:** Auto-load existing draft on page mount (FE-004 NOTE 3). Correction chain visualisation (FE-006). Encounter list / patient detail pages. Authentication / role-gated PHI reads. INF-003 LLM memory budget alignment. Streaming UI.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; `final.content` and correction `content` are free-text clinical narrative per `.claude/rules/local-llm-and-phi.md` §3; masked before any logger call; never in browser storage or URL.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** molecules (AIIndicatedText prop fix), hooks (useDraftLifecycle propagation + new useCorrectFinal), services (new finals service), app (page extension)
 
 ---
 

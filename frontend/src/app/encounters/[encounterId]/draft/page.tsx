@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * /encounters/[encounterId]/draft ページ — カルテ下書き生成・編集・確定。
+ * /encounters/[encounterId]/draft ページ — カルテ下書き生成・編集・確定・訂正。
  *
  * - useGenerateDraft: 生成フロー (FE-003)
  * - useDraftLifecycle: 編集・承認フロー (FE-004)
+ * - useCorrectFinal: 確定カルテ訂正フロー (FE-005)
  * - PHI (clinicalInput, draft.content, final.content) は console.* に出力しない。
  * - PHI は localStorage / sessionStorage / indexedDB / cookies に書き込まない。
  * - PHI は URL / searchParams に含めない。
@@ -17,13 +18,16 @@
  *     → AIIndicatedText + ConfidencePill + 3アクションボタン (再生成 / 編集 / 承認)
  *   useGenerateDraft.status === "success" && lifecycle.mode === "editing"
  *     → TextArea + キャンセル / 更新ボタン
- *   lifecycle.mode === "finalized"
- *     → 確定済みバッジ + 確定カルテ本文 (アクションボタンなし)
+ *   lifecycle.mode === "finalized" && correction.mode === "view"
+ *     → 確定済みバッジ + 確定カルテ本文 + 訂正ボタン
+ *   lifecycle.mode === "finalized" && correction.mode === "correcting"
+ *     → TextArea (pre-fill) + キャンセル / 更新ボタン
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
+import { useCorrectFinal } from "@/hooks/useCorrectFinal";
 import {
   LATENCY_SPINNER_MS,
   LATENCY_SKELETON_MS,
@@ -35,6 +39,7 @@ import TextArea from "@/components/atoms/TextArea";
 import FormField from "@/components/molecules/FormField";
 import AIIndicatedText from "@/components/molecules/AIIndicatedText";
 import ConfidencePill from "@/components/molecules/ConfidencePill";
+import type { RecordFinal } from "@/types/recordFinal";
 
 interface DraftPageProps {
   // Next.js 15 では params は Promise として提供される
@@ -136,10 +141,40 @@ export default function DraftPage({ params }: DraftPageProps) {
   // 臨床医 ID プレースホルダー (認証 Block で置き換える)
   const [clinicianId] = useState<string>("00000000-0000-0000-0000-000000000001");
 
-  const { clinicalInput, setClinicalInput, status, draft, error, generate, cancel, elapsedMs } =
-    useGenerateDraft(encounterId);
+  const gen = useGenerateDraft(encounterId);
+  const {
+    clinicalInput,
+    setClinicalInput,
+    status,
+    draft,
+    setDraft,
+    error,
+    generate,
+    cancel,
+    elapsedMs,
+  } = gen;
 
-  const lifecycle = useDraftLifecycle(draft, clinicianId);
+  // onDraftUpdated で saveEdit 成功時に draft を即座に更新する (FE-005 fix #2)
+  const lifecycle = useDraftLifecycle(draft, clinicianId, { onDraftUpdated: setDraft });
+
+  // currentFinal: lifecycle.approve() 成功後の確定カルテ、または訂正後の最新版
+  const [currentFinal, setCurrentFinal] = useState<RecordFinal | null>(null);
+
+  // lifecycle.final が設定されたとき (approve 成功) に currentFinal を初期化する
+  useEffect(() => {
+    if (lifecycle.final !== null) {
+      setCurrentFinal(lifecycle.final);
+    }
+  }, [lifecycle.final]);
+
+  const correction = useCorrectFinal(currentFinal, clinicianId);
+
+  // 訂正成功後: correctedFinal を currentFinal として採用し chain head を更新する
+  useEffect(() => {
+    if (correction.correctedFinal !== null) {
+      setCurrentFinal(correction.correctedFinal);
+    }
+  }, [correction.correctedFinal]);
 
   const isGenerating = status === "generating";
   const isButtonDisabled = clinicalInput.trim() === "" || isGenerating;
@@ -317,8 +352,8 @@ export default function DraftPage({ params }: DraftPageProps) {
           </div>
         )}
 
-        {/* finalized モード: 確定済み表示 (アクションボタンなし) */}
-        {lifecycle.mode === "finalized" && lifecycle.final !== null && (
+        {/* finalized モード: 確定済み表示 + 訂正フロー */}
+        {lifecycle.mode === "finalized" && currentFinal !== null && (
           <div>
             {/* 確定済みバッジ — 不変性を示す視覚的キュー */}
             <div className="mb-4 flex items-center gap-2">
@@ -332,12 +367,77 @@ export default function DraftPage({ params }: DraftPageProps) {
               </span>
             </div>
 
-            {/* 確定カルテ本文 — AIIndicatedText で "確定カルテ" ラベルを付ける */}
-            <AIIndicatedText label="確定カルテ">
-              <pre className="whitespace-pre-wrap font-body text-sm text-navy">
-                {lifecycle.final.content}
-              </pre>
-            </AIIndicatedText>
+            {/* 訂正モード: TextArea + キャンセル / 更新ボタン */}
+            {correction.mode === "correcting" && (
+              <div>
+                <FormField id="correct-content" label="訂正内容">
+                  <TextArea
+                    id="correct-content"
+                    value={correction.content}
+                    onChange={(e) => correction.setContent(e.target.value)}
+                    rows={8}
+                    disabled={correction.status === "submitting"}
+                  />
+                </FormField>
+
+                <div className="mt-4 flex items-center gap-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={correction.cancel}
+                    disabled={correction.status === "submitting"}
+                  >
+                    キャンセル
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={correction.status === "submitting"}
+                    disabled={
+                      correction.status === "submitting" || correction.content.trim() === ""
+                    }
+                    onClick={() => void correction.submit()}
+                  >
+                    更新
+                  </Button>
+                </div>
+
+                {/* 訂正エラーメッセージ */}
+                {correction.status === "error" && correction.error !== null && (
+                  <p className="mt-3 text-sm text-error" role="alert">
+                    {correction.error}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* view モード: 確定カルテ本文 + 訂正ボタン */}
+            {correction.mode === "view" && (
+              <div>
+                {/* confidence が設定されている場合は ConfidencePill を表示する */}
+                {currentFinal.confidence !== null && (
+                  <div className="mb-3">
+                    <ConfidencePill confidence={currentFinal.confidence} />
+                  </div>
+                )}
+
+                {/* 確定カルテ本文 — ariaLabel で "確定カルテ" とアナウンスする (FE-005 fix #1) */}
+                <AIIndicatedText label="確定カルテ" ariaLabel="確定カルテ">
+                  <pre className="whitespace-pre-wrap font-body text-sm text-navy">
+                    {currentFinal.content}
+                  </pre>
+                </AIIndicatedText>
+
+                {/* 訂正ボタン */}
+                <div className="mt-4">
+                  <Button variant="secondary" size="sm" onClick={correction.enter}>
+                    <PencilIcon />
+                    訂正
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

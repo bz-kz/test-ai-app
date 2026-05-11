@@ -16,6 +16,13 @@ export interface AIIndicatedTextProps {
   children: React.ReactNode;
   /** AI 生成ラベルキャプション。デフォルト "AI 生成" */
   label?: string;
+  /**
+   * role="article" に設定する aria-label を上書きする。
+   * 未指定の場合はデフォルトの "AI 生成テキスト" が使われる。
+   * 確定カルテなど文脈が変わるとき (例: "確定カルテ") に渡すことで
+   * スクリーンリーダーが正確なラベルを読み上げられる。
+   */
+  ariaLabel?: string;
 }
 
 /**
@@ -62,11 +69,15 @@ function AIIcon() {
  *   - AI アイコン + ラベルを先頭に配置
  *   - children をそのまま描画 (エスケープはReact が保証)
  */
-export function AIIndicatedText({ children, label = "AI 生成" }: AIIndicatedTextProps) {
+export function AIIndicatedText({
+  children,
+  label = "AI 生成",
+  ariaLabel = "AI 生成テキスト",
+}: AIIndicatedTextProps) {
   return (
     <div
       role="article"
-      aria-label="AI 生成テキスト"
+      aria-label={ariaLabel}
       /* DESIGN.md: 左ボーダー Tertiary Sage (#059669)、背景は周囲に合わせる */
       className="border-l-4 border-[#059669] pl-4"
     >

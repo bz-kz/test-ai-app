@@ -187,6 +187,24 @@ describe("useGenerateDraft", () => {
     });
   });
 
+  it("setDraft: 外部から draft を直接置き換えられる", () => {
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    expect(result.current.draft).toBeNull();
+
+    act(() => {
+      result.current.setDraft(FAKE_DRAFT);
+    });
+
+    expect(result.current.draft).toEqual(FAKE_DRAFT);
+
+    act(() => {
+      result.current.setDraft(null);
+    });
+
+    expect(result.current.draft).toBeNull();
+  });
+
   it("成功後は elapsedMs が 0 にリセットされる", async () => {
     mockCreate.mockResolvedValueOnce({ kind: "created", draft: FAKE_DRAFT });
 

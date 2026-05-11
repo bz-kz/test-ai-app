@@ -210,6 +210,28 @@ describe("useDraftLifecycle", () => {
       // apiFetch は呼ばれない
       expect(mockEdit).not.toHaveBeenCalled();
     });
+
+    it("成功時: onDraftUpdated コールバックが更新後の RecordDraft で呼ばれる", async () => {
+      const updatedDraft = { ...FAKE_DRAFT, content: "更新後の内容" };
+      mockEdit.mockResolvedValueOnce({ kind: "updated", draft: updatedDraft });
+
+      const onDraftUpdated = vi.fn();
+      const { result } = renderHook(() =>
+        useDraftLifecycle(FAKE_DRAFT, FAKE_CLINICIAN_ID, { onDraftUpdated })
+      );
+
+      act(() => {
+        result.current.enterEditMode();
+        result.current.setEditContent("更新後の内容");
+      });
+
+      await act(async () => {
+        await result.current.saveEdit();
+      });
+
+      expect(onDraftUpdated).toHaveBeenCalledOnce();
+      expect(onDraftUpdated).toHaveBeenCalledWith(updatedDraft);
+    });
   });
 
   describe("approve", () => {
