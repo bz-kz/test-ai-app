@@ -62,3 +62,9 @@ Thumbs.db
 # フロントエンドの src/lib/ はルートの lib/ パターンに誤マッチするため除外を解除
 !frontend/src/lib/
 !frontend/src/lib/**
+
+# Playwright MCP の一時アーティファクト (snapshot YAML / console log / screenshot)。
+# Option C の UI 検証で main loop が生成する; リポジトリに commit しない。
+.playwright-mcp/
+fe*-state.png
+fe*-error-state.png

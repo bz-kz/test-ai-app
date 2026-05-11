@@ -19,8 +19,9 @@ All services share a single private bridge network. Only `frontend` and `backend
 - Docker Desktop or Docker Engine 25+
 - `docker compose` v2 (built into Docker Desktop)
 - Disk: 15 GB free (model weights + Postgres data volume)
-- RAM: 16 GB recommended (8 GB minimum for CPU-only operation)
-- GPU: optional. The E4B model is designed to run on modest hardware, including CPU-only.
+- **System RAM: 24 GB recommended.** The publisher-supplied `gemma4:e4b` Ollama tag loads ≈10 GiB at runtime (≈9.4 GiB weights + KV cache + compute graph), and the `llm` container needs that plus headroom alongside backend / postgres / frontend / Docker overhead. See `SPEC.md#hardware-assumptions`.
+- **Docker Desktop memory allocation: ≥ 12 GB.** On macOS / Windows, open Docker Desktop → Settings → Resources → Memory and confirm the slider is ≥ 12 GB. Below this the `llm` container fails to load the model with `model requires more system memory than is available` and `POST /encounters/{id}/drafts` returns 503 `inference_unavailable` (see INF-003 history).
+- GPU: optional. With a GPU and ≥10 GB VRAM the same ~10 GiB footprint is paid in VRAM rather than system RAM. The model also runs CPU-only on the reference RAM allocation above (latency ≥3× slower vs GPU per SPEC).
 
 ## First boot
 

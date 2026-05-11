@@ -51,14 +51,15 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 
 ## Hardware Assumptions
 
-- **Goal:** State the baseline so latency and VRAM budgets in feature Specs are interpretable.
+- **Goal:** State the baseline so latency and memory budgets in feature Specs are interpretable.
 - **Inputs:** _(none)_
 - **Acceptance:**
-  - [ ] Reference dev hardware: 8-core CPU, 16 GB RAM, single GPU with ≥6 GB VRAM (e.g. RTX 4060). E4B fits on modest hardware by design.
-  - [ ] CPU-only operation supported; latencies SHOULD assume ≥3× slowdown vs GPU baseline.
+  - [ ] Reference dev hardware: 8-core CPU, 24 GB system RAM with Docker Desktop allocated ≥12 GB for the `llm` container, optional single GPU with ≥10 GB VRAM (e.g. RTX 4070) when offload is available.
+  - [ ] CPU-only operation supported on the reference RAM allocation above; latencies SHOULD assume ≥3× slowdown vs GPU baseline.
   - [ ] Latency budget for `gemma4:e4b` first-token: p95 ≤1 s; total response p95 ≤6 s for 1k output tokens.
-  - [ ] VRAM peak: ≤6 GB at `gemma4:e4b` Q4_0.
-- **Out-of-scope:** Multi-GPU, Apple-Silicon-specific tuning (track in a follow-up ADR if needed).
+  - [ ] Memory footprint of the publisher-supplied `gemma4:e4b` Ollama tag: ≈10 GiB total system memory at runtime (≈9.4 GiB weights + ≈224 MiB KV cache + ≈125 MiB compute graph). The tag is loaded at its publisher-supplied default precision; the project pins this tag and does NOT assume a Q4_0 (or any other) re-quantization. A custom Modelfile to re-quantize is out-of-scope and would require an ADR.
+  - [ ] On a machine with no GPU or insufficient VRAM, the same footprint is paid in system RAM rather than VRAM; the Docker Desktop memory allocation MUST be sized for the larger of the two cases.
+- **Out-of-scope:** Multi-GPU, Apple-Silicon-specific tuning (track in a follow-up ADR if needed), custom Modelfile re-quantization of `gemma4:e4b`.
 - **Open-questions:** _(none)_
 - **Gates Touched:** G5
 
