@@ -11,9 +11,10 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID     | Title                             | Status | Gates Touched      | Owner     |
-| ------ | --------------------------------- | ------ | ------------------ | --------- |
-| FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7 | Generator |
+| ID     | Title                             | Status | Gates Touched          | Owner     |
+| ------ | --------------------------------- | ------ | ---------------------- | --------- |
+| FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7     | Generator |
+| FE-002 | Patient Search by MRN             | qa     | G1, G2, G3, G4, G6, G7 | Generator |
 
 ---
 
@@ -44,6 +45,42 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** none
 - **Gates Touched:** G1, G2, G3, G6, G7
 - **Affected Layers:** atoms
+
+---
+
+## Patient Search by MRN (FE-002)
+
+- **Goal:** Render a `/patients` page with an MRN search field that calls `GET /patients?mrn=<value>` (BE-004) and displays the resulting patient or an empty/not-found/error state. Establishes the project's HTTP client, service layer, hook pattern, the `Input` atom, the `FormField` molecule, and the `MrnSearchField` molecule.
+- **Inputs:**
+  - frontend/SPEC.md#frontend-mission — clinician-first UI, PHI in browser storage prohibited
+  - frontend/SPEC.md#atomic-design-mapping — atom/molecule/organism placement rules
+  - frontend/SPEC.md#layer-rules — pages use hooks; hooks use services; services own fetch
+  - frontend/SPEC.md#latency-ux-budget — spinner tier for sub-300ms endpoint
+  - DESIGN.md#inputs — Input visual spec
+  - SPEC.md#domain-glossary — canonical identifiers: patient, mrn, family_name, given_name, date_of_birth
+  - backend/app/interfaces/routers/patients.py — PatientRead response shape; 404 detail shape
+  - .claude/rules/local-llm-and-phi.md §3, §4 — PHI masking and storage rules
+- **Acceptance:**
+  - [ ] `src/lib/api.ts` exports `apiFetch<T>` with `ApiResult<T>` discriminated union; never throws on non-2xx.
+  - [ ] `src/lib/maskPhi.ts` exports `maskPhi(value: unknown): string`; unit tested.
+  - [ ] `src/services/patients.ts` exports `searchPatientsByMrn` using `apiFetch`; maps to `SearchPatientResult`.
+  - [ ] `src/hooks/useMrnSearch.ts` exports `useMrnSearch()` with debounce 200ms, AbortController, and idle/searching/found/not_found/error states; unit tested.
+  - [ ] `src/components/atoms/Input.tsx` exports `Input` via `forwardRef`; `error` prop, focus ring, disabled state; unit tested.
+  - [ ] `src/components/molecules/FormField.tsx` exports `FormField`; label/htmlFor association, helper/error line; unit tested.
+  - [ ] `src/components/molecules/MrnSearchField.tsx` exports `MrnSearchField`; presentation-only; JP strings; unit tested.
+  - [ ] `src/app/patients/page.tsx` composes `MrnSearchField` + `useMrnSearch`; four UX states; no fetch, no storage writes, no console logs.
+  - [ ] Optional: `src/app/patients/__tests__/page.test.tsx` covering all four UX states.
+  - [ ] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 console.\*; 0 `: any`.
+  - [ ] G1 `npx tsc --noEmit` — 0 errors.
+  - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [ ] G3 `npm test -- --run` — all tests pass.
+  - [ ] G4 security-check — no PHI in logs or storage; no hosted-LLM SDKs.
+- **Out-of-scope:** PatientCard organism; patient creation/edit UI; encounter list; MaskToggle; ConfidencePill; search history/URL sync; toast notifications; i18n; SSR pre-fetch.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; MRN, family_name, given_name, date_of_birth are PHI. Never echoed in console.\*, never persisted in browser storage. Use maskPhi for any debug log.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** atoms, molecules, hooks, services, app (page), lib (api.ts + maskPhi.ts)
 
 ---
 
