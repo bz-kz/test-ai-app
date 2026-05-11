@@ -14,7 +14,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | ID     | Title                             | Status | Gates Touched          | Owner     |
 | ------ | --------------------------------- | ------ | ---------------------- | --------- |
 | FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7     | Generator |
-| FE-002 | Patient Search by MRN             | qa     | G1, G2, G3, G4, G6, G7 | Generator |
+| FE-002 | Patient Search by MRN             | done   | G1, G2, G3, G4, G6, G7 | Generator |
 
 ---
 
@@ -61,20 +61,20 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
   - backend/app/interfaces/routers/patients.py — PatientRead response shape; 404 detail shape
   - .claude/rules/local-llm-and-phi.md §3, §4 — PHI masking and storage rules
 - **Acceptance:**
-  - [ ] `src/lib/api.ts` exports `apiFetch<T>` with `ApiResult<T>` discriminated union; never throws on non-2xx.
-  - [ ] `src/lib/maskPhi.ts` exports `maskPhi(value: unknown): string`; unit tested.
-  - [ ] `src/services/patients.ts` exports `searchPatientsByMrn` using `apiFetch`; maps to `SearchPatientResult`.
-  - [ ] `src/hooks/useMrnSearch.ts` exports `useMrnSearch()` with debounce 200ms, AbortController, and idle/searching/found/not_found/error states; unit tested.
-  - [ ] `src/components/atoms/Input.tsx` exports `Input` via `forwardRef`; `error` prop, focus ring, disabled state; unit tested.
-  - [ ] `src/components/molecules/FormField.tsx` exports `FormField`; label/htmlFor association, helper/error line; unit tested.
-  - [ ] `src/components/molecules/MrnSearchField.tsx` exports `MrnSearchField`; presentation-only; JP strings; unit tested.
-  - [ ] `src/app/patients/page.tsx` composes `MrnSearchField` + `useMrnSearch`; four UX states; no fetch, no storage writes, no console logs.
-  - [ ] Optional: `src/app/patients/__tests__/page.test.tsx` covering all four UX states.
-  - [ ] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 console.\*; 0 `: any`.
-  - [ ] G1 `npx tsc --noEmit` — 0 errors.
-  - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
-  - [ ] G3 `npm test -- --run` — all tests pass.
-  - [ ] G4 security-check — no PHI in logs or storage; no hosted-LLM SDKs.
+  - [x] `src/lib/api.ts` exports `apiFetch<T>` with `ApiResult<T>` discriminated union; never throws on non-2xx.
+  - [x] `src/lib/maskPhi.ts` exports `maskPhi(value: unknown): string`; unit tested.
+  - [x] `src/services/patients.ts` exports `searchPatientsByMrn` using `apiFetch`; maps to `SearchPatientResult`.
+  - [x] `src/hooks/useMrnSearch.ts` exports `useMrnSearch()` with debounce 200ms, AbortController, and idle/searching/found/not_found/error states; unit tested.
+  - [x] `src/components/atoms/Input.tsx` exports `Input` via `forwardRef`; `error` prop, focus ring, disabled state; unit tested.
+  - [x] `src/components/molecules/FormField.tsx` exports `FormField`; label/htmlFor association, helper/error line; unit tested.
+  - [x] `src/components/molecules/MrnSearchField.tsx` exports `MrnSearchField`; presentation-only; JP strings; unit tested.
+  - [x] `src/app/patients/page.tsx` composes `MrnSearchField` + `useMrnSearch`; four UX states; no fetch, no storage writes, no console logs.
+  - [x] Optional: `src/app/patients/__tests__/page.test.tsx` covering all four UX states.
+  - [x] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 console.\*; 0 `: any`.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — all tests pass.
+  - [x] G4 security-check — no PHI in logs or storage; no hosted-LLM SDKs.
 - **Out-of-scope:** PatientCard organism; patient creation/edit UI; encounter list; MaskToggle; ConfidencePill; search history/URL sync; toast notifications; i18n; SSR pre-fetch.
 - **Open-questions:** _(none)_
 - **Inference Impact:** no
