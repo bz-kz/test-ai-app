@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.domain.phi import mask_phi
-from app.infrastructure.llm.errors import InferenceError
+from app.usecases.errors import InferenceError
 
 from .schemas import ErrorResponse
 
