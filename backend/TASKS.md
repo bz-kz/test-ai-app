@@ -29,7 +29,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-011  | INFO-level UUID hardening sweep | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-012  | X-Clinician-Id header auth      | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | BE-013  | Streaming draft endpoint        | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| INF-004 | ASR compose service             | qa     | G0, G4, G5, G6, G7         | Generator |
+| INF-004 | ASR compose service             | done   | G0, G4, G5, G6, G7         | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
