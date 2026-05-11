@@ -15,6 +15,10 @@ BE-008 Acceptance:
   (j) GET  /encounters/{id}/finals 200 — 空リスト (確定なし)
   (k) GET  /encounters/{id}/finals 200 — シード後に確定リスト返す
   (l) GET  /encounters/{id}/finals 200 — 未知 encounter_id でも 404 ではなく空リスト
+BE-009 Acceptance:
+  (m) GET  /encounters/{id}/drafts 200 — 1 件の下書きを返す
+  (n) GET  /encounters/{id}/drafts 200 — 複数件、created_at 降順
+  (o) GET  /encounters/{id}/drafts 200 — 未知 encounter_id でも 200 空リスト
 
 DI 方針:
   ルーターはユースケースファクトリ依存を使うため、
@@ -70,10 +74,16 @@ from app.usecases.di import (
     make_find_patient_by_id,
     make_find_patient_by_mrn,
     make_generate_record_draft,
+    make_list_drafts_by_encounter,
     make_list_encounters_by_patient,
     make_list_finals_by_encounter,
 )
-from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
+from app.usecases.draft import (
+    edit_record_draft,
+    find_draft_by_id,
+    generate_record_draft,
+    list_drafts_by_encounter,
+)
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
@@ -291,6 +301,17 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient | None = None)
 
         return _list
 
+    def _override_make_list_drafts_by_encounter():  # type: ignore[no-untyped-def]
+        draft_repo = RecordDraftRepository(session)
+
+        async def _list(encounter_id):  # type: ignore[no-untyped-def]
+            return await list_drafts_by_encounter(
+                encounter_id=encounter_id,
+                draft_repo=draft_repo,
+            )
+
+        return _list
+
     test_app = FastAPI()
     test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     test_app.add_exception_handler(
@@ -321,6 +342,9 @@ def _make_test_app(session: AsyncSession, llm: FakeLocalLLMClient | None = None)
     test_app.dependency_overrides[make_find_chain_for_final] = _override_make_find_chain_for_final
     test_app.dependency_overrides[make_list_finals_by_encounter] = (
         _override_make_list_finals_by_encounter
+    )
+    test_app.dependency_overrides[make_list_drafts_by_encounter] = (
+        _override_make_list_drafts_by_encounter
     )
     test_app.dependency_overrides[get_llm_client] = lambda: _llm
     return test_app
@@ -610,6 +634,73 @@ class TestGetFinalsByEncounter:
     def test_200_empty_list_on_unknown_encounter(self, client: TestClient) -> None:
         """未知 encounter_id でも 404 ではなく空リストを返す (ユースケース仕様)。"""
         resp = client.get(f"/encounters/{uuid4()}/finals")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+# ---------------------------------------------------------------------------
+# (m)(n)(o) GET /encounters/{id}/drafts
+# ---------------------------------------------------------------------------
+
+
+class TestGetDraftsByEncounter:
+    def test_200_with_one_draft(self, client: TestClient) -> None:
+        """下書きが 1 件存在する受診で DraftRead リストを返す (BE-009)。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFTS-ENC-001").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        draft_resp = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "発熱と咳"},
+        )
+        assert draft_resp.status_code == 201
+        draft_id = draft_resp.json()["id"]
+
+        resp = client.get(f"/encounters/{encounter_id}/drafts")
+
+        assert resp.status_code == 200
+        bodies = resp.json()
+        assert len(bodies) == 1
+        assert bodies[0]["id"] == draft_id
+        assert bodies[0]["encounter_id"] == encounter_id
+        # DraftRead フィールドセットを確認する
+        expected_keys = {"id", "encounter_id", "content", "confidence", "created_at", "updated_at"}
+        assert set(bodies[0].keys()) == expected_keys
+
+    def test_200_multiple_drafts_ordered_newest_first(self, client: TestClient) -> None:
+        """複数の下書きが created_at 降順 (新しい順) で返される (BE-009)。"""
+        patient_id = _create_patient(client, mrn="MRN-DRAFTS-ENC-002").json()["id"]
+        encounter_id = _create_encounter(client, patient_id).json()["id"]
+
+        draft_resp_a = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "1 件目"},
+        )
+        assert draft_resp_a.status_code == 201
+        draft_id_a = draft_resp_a.json()["id"]
+
+        draft_resp_b = client.post(
+            f"/encounters/{encounter_id}/drafts",
+            json={"clinical_input": "2 件目"},
+        )
+        assert draft_resp_b.status_code == 201
+        draft_id_b = draft_resp_b.json()["id"]
+
+        resp = client.get(f"/encounters/{encounter_id}/drafts")
+
+        assert resp.status_code == 200
+        bodies = resp.json()
+        assert len(bodies) == 2
+        # 降順: 2 件目 (新しい方) が先頭
+        assert bodies[0]["id"] == draft_id_b
+        assert bodies[1]["id"] == draft_id_a
+        # created_at 降順の確認
+        assert bodies[0]["created_at"] >= bodies[1]["created_at"]
+
+    def test_200_empty_list_on_unknown_encounter(self, client: TestClient) -> None:
+        """未知 encounter_id でも 404 ではなく空リストを返す (BE-009)。"""
+        resp = client.get(f"/encounters/{uuid4()}/drafts")
 
         assert resp.status_code == 200
         assert resp.json() == []

@@ -13,6 +13,11 @@ BE-006 Acceptance:
 BE-007 Acceptance (edit):
   (g) edit_record_draft が更新済み RecordDraft を返す; updated_at が進む; DRAFT_UPDATE 監査 1 件
   (h) 存在しない draft_id → DraftNotFound; 監査行なし; 下書き変更なし
+
+BE-009 Acceptance (list):
+  (i) list_drafts_by_encounter が N 件を created_at 降順で返す
+  (j) 下書きがない受診で空リストを返す (例外なし)
+  (k) 存在しない encounter_id でも空リストを返す (受診存在確認なし)
 """
 
 from __future__ import annotations
@@ -34,7 +39,12 @@ from app.infrastructure.db.repositories import (
 )
 from app.infrastructure.llm.errors import InferenceError
 from app.infrastructure.llm.fake_client import FakeLocalLLMClient
-from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
+from app.usecases.draft import (
+    edit_record_draft,
+    find_draft_by_id,
+    generate_record_draft,
+    list_drafts_by_encounter,
+)
 from app.usecases.encounter import create_encounter
 from app.usecases.errors import DraftNotFound, EncounterNotFound
 from app.usecases.patient import create_patient
@@ -386,3 +396,89 @@ async def test_edit_record_draft_raises_draft_not_found(session: AsyncSession) -
     # 監査行が書かれていないことを確認する
     logs = await audit_repo.list_by_target("record_draft", nonexistent_id)
     assert len(logs) == 0
+
+
+# ---------------------------------------------------------------------------
+# (i) list_drafts_by_encounter — N 件を created_at 降順で返す
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_by_encounter_returns_ordered_desc(session: AsyncSession) -> None:
+    """list_drafts_by_encounter が created_at 降順で下書きを返す (BE-009)。"""
+    encounter = await _insert_encounter(session)
+    encounter_repo = EncounterRepository(session)
+    draft_repo = RecordDraftRepository(session)
+    audit_repo = AuditLogRepository(session)
+    llm = FakeLocalLLMClient()
+
+    # 2 件の下書きを順に生成する
+    draft_a = await generate_record_draft(
+        clinical_input="1 件目の入力",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=encounter_repo,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    draft_b = await generate_record_draft(
+        clinical_input="2 件目の入力",
+        encounter_id=encounter.id,
+        llm=llm,
+        encounter_repo=encounter_repo,
+        draft_repo=draft_repo,
+        audit_repo=audit_repo,
+    )
+    await session.flush()
+
+    drafts = await list_drafts_by_encounter(
+        encounter_id=encounter.id,
+        draft_repo=draft_repo,
+    )
+
+    assert len(drafts) == 2
+    # 降順: 2 件目 (新しい方) が先頭
+    ids = [d.id for d in drafts]
+    assert ids[0] == draft_b.id
+    assert ids[1] == draft_a.id
+    # created_at 降順を確認する
+    assert drafts[0].created_at.replace(tzinfo=None) >= drafts[1].created_at.replace(tzinfo=None)
+
+
+# ---------------------------------------------------------------------------
+# (j) 下書きがない受診 → 空リスト (例外なし)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_by_encounter_empty_on_no_drafts(session: AsyncSession) -> None:
+    """下書きがない受診では空リストを返す。例外は raise しない (BE-009)。"""
+    encounter = await _insert_encounter(session)
+    draft_repo = RecordDraftRepository(session)
+
+    drafts = await list_drafts_by_encounter(
+        encounter_id=encounter.id,
+        draft_repo=draft_repo,
+    )
+
+    assert drafts == []
+
+
+# ---------------------------------------------------------------------------
+# (k) 存在しない encounter_id → 空リスト (受診存在確認なし)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_by_encounter_empty_on_unknown_encounter(session: AsyncSession) -> None:
+    """存在しない encounter_id でも空リストを返す。受診の存在確認は行わない (BE-009)。"""
+    draft_repo = RecordDraftRepository(session)
+
+    drafts = await list_drafts_by_encounter(
+        encounter_id=uuid4(),
+        draft_repo=draft_repo,
+    )
+
+    assert drafts == []

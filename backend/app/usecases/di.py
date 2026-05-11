@@ -25,7 +25,12 @@ from app.infrastructure.db.repositories import (
 )
 from app.infrastructure.llm import make_llm_client
 from app.infrastructure.llm.client import LocalLLMClient
-from app.usecases.draft import edit_record_draft, find_draft_by_id, generate_record_draft
+from app.usecases.draft import (
+    edit_record_draft,
+    find_draft_by_id,
+    generate_record_draft,
+    list_drafts_by_encounter,
+)
 from app.usecases.encounter import (
     create_encounter,
     find_encounter_by_id,
@@ -301,6 +306,27 @@ def make_find_draft_by_id(
         )
 
     return _find
+
+
+ListDraftsByEncounterCallable = Callable[
+    [UUID],
+    Coroutine[Any, Any, list[RecordDraft]],
+]
+
+
+def make_list_drafts_by_encounter(
+    session: AsyncSession = Depends(_get_db_session),
+) -> ListDraftsByEncounterCallable:
+    """list_drafts_by_encounter ユースケースをセッション付きでクロージャとして返す (BE-009)。"""
+    draft_repo = RecordDraftRepository(session)
+
+    async def _list(encounter_id: UUID) -> list[RecordDraft]:
+        return await list_drafts_by_encounter(
+            encounter_id=encounter_id,
+            draft_repo=draft_repo,
+        )
+
+    return _list
 
 
 # ---------------------------------------------------------------------------

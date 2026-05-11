@@ -220,6 +220,19 @@ class RecordDraftRepository:
         row.updated_at = updated_at  # type: ignore[assignment]
         logger.debug("record_draft updated: id=%s", draft_id)
 
+    async def list_by_encounter(self, encounter_id: UUID) -> list[RecordDraft]:
+        """受診 ID に紐づく全下書きを created_at 降順で返す (BE-009)。
+
+        受診が存在しない場合は空リストを返す。受診の存在確認はユースケース層の責務。
+        content は PHI のため encounter_id のみログに記録する。
+        """
+        result = await self._session.execute(
+            select(RecordDraftORM)
+            .where(RecordDraftORM.encounter_id == encounter_id)
+            .order_by(RecordDraftORM.created_at.desc())
+        )
+        return [_draft_to_domain(r) for r in result.scalars().all()]
+
 
 # ---------------------------------------------------------------------------
 # RecordFinalRepository

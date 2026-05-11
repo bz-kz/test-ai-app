@@ -11,19 +11,20 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                         | Status | Gates Touched              | Owner     |
-| ------- | ----------------------------- | ------ | -------------------------- | --------- |
-| INF-001 | Runtime Topology              | done   | G0                         | Generator |
-| BE-001  | Inference Adapter             | done   | G1, G2, G3, G4, G5, G7     | Generator |
-| BE-002  | Persistence                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-003  | API Surface                   | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-004  | Patient endpoints             | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-005  | Encounter endpoints           | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| BE-006  | Record Draft generation       | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-007  | Draft edit and finalize       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-002 | Integration gap fixes         | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| BE-008  | Record Final correction chain | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| INF-003 | LLM memory budget alignment   | done   | G5 (primary), G6, G0       | Planner   |
+| ID      | Title                         | Status      | Gates Touched              | Owner     |
+| ------- | ----------------------------- | ----------- | -------------------------- | --------- |
+| INF-001 | Runtime Topology              | done        | G0                         | Generator |
+| BE-001  | Inference Adapter             | done        | G1, G2, G3, G4, G5, G7     | Generator |
+| BE-002  | Persistence                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-003  | API Surface                   | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-004  | Patient endpoints             | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-005  | Encounter endpoints           | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| BE-006  | Record Draft generation       | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-007  | Draft edit and finalize       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-002 | Integration gap fixes         | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| BE-008  | Record Final correction chain | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| INF-003 | LLM memory budget alignment   | done        | G5 (primary), G6, G0       | Planner   |
+| BE-009  | List drafts for encounter     | in-progress | G1, G2, G3, G4, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -376,3 +377,35 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G5 (primary), G6 (SPEC alignment), G0 (compose / runbook).
 - **Affected Layers:** infrastructure (no code change in Path A); docs (runbook + SPEC.md).
 - **Status:** done
+
+---
+
+## List drafts for encounter (BE-009)
+
+- **Goal:** Add `GET /encounters/{encounter_id}/drafts` returning `list[DraftRead]` ordered by `created_at` DESC (newest first). Frontend can pick the head for resume / auto-load. Empty list on encounter with no drafts. Consistent with BE-008's `GET /encounters/{id}/finals` shape.
+- **Inputs:**
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#persistence — RecordDraftRepository pattern
+  - backend/SPEC.md#layer-boundaries — DDD direction
+  - SPEC.md#domain-glossary — `record_draft`
+  - .claude/rules/local-llm-and-phi.md §3, §4 — content is PHI; operational read returns PHI fields
+  - backend/app/infrastructure/db/repositories.py — `RecordDraftRepository`
+  - backend/app/usecases/di.py — usecase-DI seam to extend
+  - backend/app/usecases/draft.py — to extend with the list usecase
+  - backend/app/interfaces/routers/encounters.py — pattern to follow
+- **Acceptance:**
+  - [ ] `RecordDraftRepository.list_by_encounter(encounter_id: UUID) -> list[RecordDraft]` added; `SELECT ... WHERE encounter_id = $1 ORDER BY created_at DESC`; logs UUID only.
+  - [ ] `list_drafts_by_encounter(encounter_id: UUID, ...) -> list[RecordDraft]` added to `app/usecases/draft.py`; empty list is valid; no encounter-existence check; logs UUID + count only.
+  - [ ] `make_list_drafts_by_encounter` factory added to `app/usecases/di.py`.
+  - [ ] `GET /encounters/{encounter_id}/drafts` added to `app/interfaces/routers/encounters.py`; `response_model=list[DraftRead]`; 200 empty list on unknown encounter.
+  - [ ] `grep -RnE '^from app\.infrastructure' backend/app/interfaces/routers/encounters.py` → 0 hits.
+  - [ ] `DraftRead` imported from `app.interfaces.routers.drafts`.
+  - [ ] `tests/usecases/test_draft.py` extended: list with N drafts ordered DESC; empty list; no encounter-existence check.
+  - [ ] `tests/interfaces/test_encounters_router.py` extended with `TestGetDraftsByEncounter`: 200 one draft; 200 multiple drafts newest-first; 200 empty on unknown encounter.
+- **Out-of-scope:** "Latest draft only" sugar endpoint, patient-scoped draft search, pagination, soft delete, auth gating.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; `content` returned in response body is the operational-read path per `.claude/rules/local-llm-and-phi.md` §4; no logger calls log content; error envelopes generic.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** infrastructure (repository +list_by_encounter), usecases (extend draft.py +di.py), interfaces (extend encounters router)
+- **Status:** in-progress

@@ -119,6 +119,26 @@ async def find_draft_by_id(
     return draft
 
 
+async def list_drafts_by_encounter(
+    *,
+    encounter_id: UUID,
+    draft_repo: RecordDraftRepository,
+) -> list[RecordDraft]:
+    """受診に紐づく全下書きを created_at 降順で返す (BE-009)。
+
+    受診に下書きが存在しない場合は空リストを返す (例外を raise しない)。
+    受診の存在確認は行わない — 空リストが正しい答えであるため (list_finals_by_encounter と同方針)。
+    content は PHI のためログに出力しない。encounter_id と件数のみ記録する。
+    """
+    drafts = await draft_repo.list_by_encounter(encounter_id)
+    logger.debug(
+        "list_drafts_by_encounter: encounter_id=%s count=%d",
+        encounter_id,
+        len(drafts),
+    )
+    return drafts
+
+
 async def edit_record_draft(
     *,
     draft_id: UUID,

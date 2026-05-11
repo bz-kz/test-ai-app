@@ -4,6 +4,7 @@ POST /encounters                          — 受診作成 (create_encounter ユ
 GET  /encounters/{encounter_id}           — UUID による受診取得
 GET  /patients/{patient_id}/encounters   — 患者に紐づく受診一覧
 GET  /encounters/{encounter_id}/finals   — 受診に紐づく確定カルテ一覧 (BE-008)
+GET  /encounters/{encounter_id}/drafts   — 受診に紐づく下書き一覧 (BE-009)
 
 PHI ルール:
   - encounter と patient の紐づきは PHI (local-llm-and-phi.md §3)。
@@ -24,15 +25,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from app.interfaces.routers.drafts import DraftRead
 from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
     CreateEncounterCallable,
     FindEncounterByIdCallable,
+    ListDraftsByEncounterCallable,
     ListEncountersByPatientCallable,
     ListFinalsByEncounterCallable,
     make_create_encounter,
     make_find_encounter_by_id,
+    make_list_drafts_by_encounter,
     make_list_encounters_by_patient,
     make_list_finals_by_encounter,
 )
@@ -218,4 +222,35 @@ async def get_finals_by_encounter(
             created_at=f.created_at,
         )
         for f in finals
+    ]
+
+
+@router.get(
+    "/encounters/{encounter_id}/drafts",
+    response_model=list[DraftRead],
+    summary="受診の下書き一覧",
+)
+async def get_drafts_by_encounter(
+    encounter_id: UUID,
+    list_drafts: ListDraftsByEncounterCallable = Depends(make_list_drafts_by_encounter),
+) -> list[DraftRead]:
+    """受診 ID に紐づく全下書きを created_at 降順で返す (BE-009)。
+
+    下書きが存在しない場合は空リストを返す (404 ではない)。
+    受診が存在しない場合も空リストを返す — 受診の存在確認はスコープ外。
+    UUID はエラーメッセージに含めない。
+    content は PHI だが、呼び出し元が明示的にこのエンドポイントを叩いたため返却する
+    (local-llm-and-phi.md §4 操作的読み取り)。
+    """
+    drafts = await list_drafts(encounter_id)
+    return [
+        DraftRead(
+            id=d.id,
+            encounter_id=d.encounter_id,
+            content=d.content,
+            confidence=d.confidence,
+            created_at=d.created_at,
+            updated_at=d.updated_at,
+        )
+        for d in drafts
     ]
