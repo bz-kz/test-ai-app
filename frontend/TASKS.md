@@ -16,6 +16,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | FE-001 | Frontend foundation + Button atom | done   | G1, G2, G3, G6, G7         | Generator |
 | FE-002 | Patient Search by MRN             | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | FE-003 | Record Draft generation UI        | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004 | Draft edit and finalize UI        | qa     | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
@@ -119,6 +120,39 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; clinical_input (clinician's typed narrative) and draft.content (model output) are PHI per .claude/rules/local-llm-and-phi.md §3. Never echoed in console.\*, never written to browser storage, never appended to URL/searchParams.
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** atoms (TextArea), molecules (AIIndicatedText), hooks (useGenerateDraft), services (drafts), app (page)
+
+---
+
+## Draft edit and finalize UI (FE-004)
+
+- **Goal:** Extend `/encounters/[encounterId]/draft` with the full AI Output Patterns action set: Edit (inline edit of the AI draft content + PATCH), Approve (finalize → record_final + POST), and ConfidencePill visualisation when confidence ≤ 0.5. After Approve, the page transitions to a "finalized" state that renders record_final's content with an immutability cue. Regenerate remains mapped to the existing "下書きを生成" button.
+- **Inputs:**
+  - frontend/SPEC.md#ai-output-patterns — ConfidencePill; fixed Regenerate/Edit/Approve button order
+  - frontend/SPEC.md#layer-rules — services own fetch; hooks own state; no any
+  - DESIGN.md#ai-output-patterns — Button variants; ConfidencePill warning/neutral
+  - SPEC.md#domain-glossary — record_draft, record_final, predecessor_id
+  - .claude/rules/local-llm-and-phi.md §3 §4 — draft.content and final.content are PHI
+  - backend/app/interfaces/routers/drafts.py — PATCH /drafts/{draft_id} (BE-007), POST /drafts/{draft_id}/finalize
+  - backend/app/interfaces/routers/finals.py — GET /finals/{final_id}
+  - Existing: Button, Input, TextArea, FormField, AIIndicatedText atoms/molecules; apiFetch; maskPhi; RecordDraft type; useGenerateDraft hook
+- **Acceptance:**
+  - [x] `src/components/molecules/ConfidencePill.tsx` — renders warning/neutral pill; null confidence → null; aria-label "AI 信頼度 {value}"; rounds to 2dp; 10 unit tests green.
+  - [x] `src/types/recordFinal.ts` — RecordFinal type matching backend FinalRead shape.
+  - [x] `src/services/drafts.ts` extended — editRecordDraft, finalizeRecordDraft, getRecordFinalById; EditDraftResult, FinalizeDraftResult, GetFinalResult discriminated unions; no PHI in logs; unit tests cover happy + error paths.
+  - [x] `src/hooks/useDraftLifecycle.ts` — mode (view/editing/finalized), enterEditMode, cancelEdit, saveEdit, approve, final, status, error; AbortController; JP error messages; 18 unit tests green.
+  - [x] Draft page extended: success+view renders 3 action buttons in fixed order (再生成/編集/承認) + ConfidencePill; editing mode renders TextArea + キャンセル/更新; finalized mode renders 確定済みバッジ + 確定カルテ content, no action buttons.
+  - [x] Page integration tests extended (29 total); FE-003 latency tiers preserved.
+  - [x] Cross-cutting: 0 fetch( in components/app; 0 storage writes; 0 console.\*; 0 : any.
+  - [x] G1 npx tsc --noEmit — 0 errors.
+  - [x] G2 npx eslint . && npx prettier --check . — clean.
+  - [x] G3 npm test -- --run — 150/150 tests pass.
+  - [x] G4 security-check — no hosted-LLM SDKs; no direct LLM calls outside infrastructure; no PHI in logs/storage.
+- **Out-of-scope:** Final correction flow (POST /finals/{id}/correct — FE-005). Encounter list / patient detail page. ConfidencePill in non-AIIndicatedText contexts. Streaming UI. RecordDraftEditor organism formalisation. Authentication around clinician_id.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no — FE-004 issues no inference calls; PATCH and POST /finalize are DB-write endpoints.
+- **Data Sensitivity:** PHI; draft.content and final.content are free-text clinical narrative; never in console.\*, never in browser storage, never in URL; operational reads (page render) are explicitly requested by the caller per .claude/rules/local-llm-and-phi.md §4.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** molecules (ConfidencePill), hooks (useDraftLifecycle), services (drafts extended), types (recordFinal), app (page extended)
 
 ---
 
