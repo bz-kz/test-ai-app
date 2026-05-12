@@ -11,20 +11,21 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID      | Title                                                    | Status | Gates Touched              | Owner     |
-| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
-| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-010  | Draft page auto-sync to finalized state                  | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-011  | Hardening ADVICE bundle (frontend)                       | done   | G1, G2, G3, G4             | Generator |
+| ID      | Title                                                    | Status      | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ----------- | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done        | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| FE-008  | Streaming draft UI consumer                              | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-010  | Draft page auto-sync to finalized state                  | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-011  | Hardening ADVICE bundle (frontend)                       | done        | G1, G2, G3, G4             | Generator |
+| FE-012  | Root landing page UI                                     | in-progress | G1, G2, G3, G6, G7         | Generator |
 
 ---
 
