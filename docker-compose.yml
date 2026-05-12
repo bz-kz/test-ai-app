@@ -5,13 +5,21 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_* は Next.js が build 時に JS バンドルへ焼くため、
+      # runtime environment ではなく build args として渡す必要がある (INF-005)。
+      args:
+        - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+        - NEXT_PUBLIC_ASR_STREAMING_ENABLED=true
     ports:
       - "3000:3000"
     environment:
+      # runtime からも参照可能にしておく (server-side レンダリング等で念のため)。
+      # ただし JS バンドルへの焼き込みは上の build args 側が必須。
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
       # ADR-0003: ストリーミング ASR フラグ。デフォルト false — FE-009 の動作を維持する。
       # "true" に変更すると BE-017 のストリーミングエンドポイントを使用する。
-      - NEXT_PUBLIC_ASR_STREAMING_ENABLED=false
+      # build args 側でも同値を指定すること (Next.js は build 時に bake する)。
+      - NEXT_PUBLIC_ASR_STREAMING_ENABLED=true
     depends_on:
       backend:
         condition: service_healthy
