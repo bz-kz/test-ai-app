@@ -207,12 +207,18 @@ export default function DraftPage({ params }: DraftPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [encounterId]);
 
-  // FE-006: loaded かつ最新下書きが存在し、かつ現在 draft が null なら自動シードする
+  // FE-006: loaded かつ最新下書きが存在し、かつ現在 draft が null かつ確定カルテが存在しない場合に自動シードする
+  // SPEC line 142: 確定カルテが存在する場合は auto-seed を抑制する
   useEffect(() => {
-    if (encounterDrafts.status === "loaded" && encounterDrafts.latest !== null && draft === null) {
+    if (
+      encounterDrafts.status === "loaded" &&
+      encounterDrafts.latest !== null &&
+      draft === null &&
+      encounterFinals.latest === null
+    ) {
       setDraft(encounterDrafts.latest);
     }
-  }, [encounterDrafts.status, encounterDrafts.latest, draft, setDraft]);
+  }, [encounterDrafts.status, encounterDrafts.latest, draft, setDraft, encounterFinals.latest]);
 
   // FE-006: finalized モードで currentFinal.id が変わるたびに訂正チェーンを取得する
   const finalChain = useFinalChain();
@@ -240,12 +246,16 @@ export default function DraftPage({ params }: DraftPageProps) {
   // ≤300ms はボタン内スピナーを出さない (invisible tier)
   const showButtonSpinner = isGenerating && elapsedMs >= LATENCY_SPINNER_MS;
 
+  // SPEC line 141: drafts または finals のどちらかが loading 中はローディング状態とみなす
+  const isInitialLoading =
+    encounterDrafts.status === "loading" || encounterFinals.status === "loading";
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="mb-6 font-display text-2xl font-bold text-navy">カルテ下書き生成</h1>
 
-      {/* 確定済みモードでは入力フォームを隠す */}
-      {lifecycle.mode !== "finalized" && (
+      {/* 確定済みモードおよびローディング中は入力フォームを隠す */}
+      {lifecycle.mode !== "finalized" && !isInitialLoading && (
         <section className="mb-6">
           <FormField id="clinical-input" label="臨床入力 (Subjective/Objective)">
             <TextArea
@@ -270,8 +280,8 @@ export default function DraftPage({ params }: DraftPageProps) {
         </section>
       )}
 
-      {/* 生成ボタン: 確定済みモードおよび編集モードでは非表示 */}
-      {lifecycle.mode !== "finalized" && lifecycle.mode !== "editing" && (
+      {/* 生成ボタン: 確定済みモード・編集モード・ローディング中は非表示 */}
+      {lifecycle.mode !== "finalized" && lifecycle.mode !== "editing" && !isInitialLoading && (
         <div className="mb-8">
           <Button
             variant="primary"
@@ -287,12 +297,13 @@ export default function DraftPage({ params }: DraftPageProps) {
 
       {/* 出力エリア */}
       <section aria-live="polite" aria-atomic="true">
-        {/* idle かつ下書きなし: 案内テキスト (自動ロード中は確認インジケーターを表示) */}
-        {status === "idle" && draft === null && (
+        {/* ローディング中はインジケーターを表示し、他の UI をすべて抑制する */}
+        {isInitialLoading && <p className="text-center text-slate">下書きを確認しています…</p>}
+
+        {/* idle かつ下書きなし かつローディング完了: 案内テキスト */}
+        {!isInitialLoading && status === "idle" && draft === null && (
           <>
-            {encounterDrafts.status === "loading" ? (
-              <p className="text-center text-slate">下書きを確認しています…</p>
-            ) : (
+            {lifecycle.mode !== "finalized" && (
               <p className="text-center text-slate">
                 臨床入力を記入して『下書きを生成』を押してください
               </p>
@@ -301,7 +312,7 @@ export default function DraftPage({ params }: DraftPageProps) {
         )}
 
         {/* generating: レイテンシ UX 階層 */}
-        {isGenerating && (
+        {!isInitialLoading && isGenerating && (
           <div>
             {/* ストリーミング中かつチャンクが届き始めていればテキストを表示する。
                 チャンクが届く前はスケルトン階層 (1000ms 以上) でフォールバックする。
@@ -344,103 +355,111 @@ export default function DraftPage({ params }: DraftPageProps) {
         )}
 
         {/* success + view モード: AI 下書き表示 + アクションボタン */}
-        {status === "success" && draft !== null && lifecycle.mode === "view" && (
-          <div>
-            {/* ConfidencePill — confidence ≤ 0.5 のとき warning バリアント */}
-            {draft.confidence !== null && (
-              <div className="mb-3">
-                <ConfidencePill confidence={draft.confidence} />
+        {!isInitialLoading &&
+          status === "success" &&
+          draft !== null &&
+          lifecycle.mode === "view" && (
+            <div>
+              {/* ConfidencePill — confidence ≤ 0.5 のとき warning バリアント */}
+              {draft.confidence !== null && (
+                <div className="mb-3">
+                  <ConfidencePill confidence={draft.confidence} />
+                </div>
+              )}
+
+              <AIIndicatedText>
+                {/* SOAP 形式の改行を段落として表示する */}
+                <pre className="whitespace-pre-wrap font-body text-sm text-navy">
+                  {draft.content}
+                </pre>
+              </AIIndicatedText>
+
+              {/* アクションボタン: 再生成 / 編集 / 承認 (固定順序 per frontend/SPEC.md#ai-output-patterns) */}
+              <div className="mt-4 flex items-center gap-3">
+                {/* 再生成 — FE-008 のストリーミングパスで再実行する */}
+                <Button variant="secondary" size="sm" onClick={generateStream}>
+                  <RefreshIcon />
+                  再生成
+                </Button>
+
+                {/* 編集 — lifecycle.enterEditMode() を呼び出す */}
+                <Button variant="ghost" size="sm" onClick={lifecycle.enterEditMode}>
+                  <PencilIcon />
+                  編集
+                </Button>
+
+                {/* 承認 — lifecycle.approve() を呼び出す */}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={lifecycle.status === "finalizing"}
+                  disabled={lifecycle.status === "finalizing"}
+                  onClick={() => void lifecycle.approve()}
+                >
+                  <CheckIcon />
+                  承認
+                </Button>
               </div>
-            )}
 
-            <AIIndicatedText>
-              {/* SOAP 形式の改行を段落として表示する */}
-              <pre className="whitespace-pre-wrap font-body text-sm text-navy">{draft.content}</pre>
-            </AIIndicatedText>
-
-            {/* アクションボタン: 再生成 / 編集 / 承認 (固定順序 per frontend/SPEC.md#ai-output-patterns) */}
-            <div className="mt-4 flex items-center gap-3">
-              {/* 再生成 — FE-008 のストリーミングパスで再実行する */}
-              <Button variant="secondary" size="sm" onClick={generateStream}>
-                <RefreshIcon />
-                再生成
-              </Button>
-
-              {/* 編集 — lifecycle.enterEditMode() を呼び出す */}
-              <Button variant="ghost" size="sm" onClick={lifecycle.enterEditMode}>
-                <PencilIcon />
-                編集
-              </Button>
-
-              {/* 承認 — lifecycle.approve() を呼び出す */}
-              <Button
-                variant="primary"
-                size="sm"
-                loading={lifecycle.status === "finalizing"}
-                disabled={lifecycle.status === "finalizing"}
-                onClick={() => void lifecycle.approve()}
-              >
-                <CheckIcon />
-                承認
-              </Button>
+              {/* 承認エラーメッセージ */}
+              {lifecycle.status === "error" && lifecycle.error !== null && (
+                <p className="mt-3 text-sm text-error" role="alert">
+                  {lifecycle.error}
+                </p>
+              )}
             </div>
-
-            {/* 承認エラーメッセージ */}
-            {lifecycle.status === "error" && lifecycle.error !== null && (
-              <p className="mt-3 text-sm text-error" role="alert">
-                {lifecycle.error}
-              </p>
-            )}
-          </div>
-        )}
+          )}
 
         {/* success + editing モード: テキストエリア編集 */}
-        {status === "success" && draft !== null && lifecycle.mode === "editing" && (
-          <div>
-            <FormField id="edit-content" label="下書き編集">
-              <TextArea
-                id="edit-content"
-                value={lifecycle.editContent}
-                onChange={(e) => lifecycle.setEditContent(e.target.value)}
-                rows={8}
-                disabled={lifecycle.status === "saving"}
-              />
-            </FormField>
+        {!isInitialLoading &&
+          status === "success" &&
+          draft !== null &&
+          lifecycle.mode === "editing" && (
+            <div>
+              <FormField id="edit-content" label="下書き編集">
+                <TextArea
+                  id="edit-content"
+                  value={lifecycle.editContent}
+                  onChange={(e) => lifecycle.setEditContent(e.target.value)}
+                  rows={8}
+                  disabled={lifecycle.status === "saving"}
+                />
+              </FormField>
 
-            <div className="mt-4 flex items-center gap-3">
-              {/* キャンセル */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={lifecycle.cancelEdit}
-                disabled={lifecycle.status === "saving"}
-              >
-                キャンセル
-              </Button>
+              <div className="mt-4 flex items-center gap-3">
+                {/* キャンセル */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={lifecycle.cancelEdit}
+                  disabled={lifecycle.status === "saving"}
+                >
+                  キャンセル
+                </Button>
 
-              {/* 更新 — editContent が空白のみの場合は無効 */}
-              <Button
-                variant="primary"
-                size="sm"
-                loading={lifecycle.status === "saving"}
-                disabled={lifecycle.status === "saving" || lifecycle.editContent.trim() === ""}
-                onClick={() => void lifecycle.saveEdit()}
-              >
-                更新
-              </Button>
+                {/* 更新 — editContent が空白のみの場合は無効 */}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={lifecycle.status === "saving"}
+                  disabled={lifecycle.status === "saving" || lifecycle.editContent.trim() === ""}
+                  onClick={() => void lifecycle.saveEdit()}
+                >
+                  更新
+                </Button>
+              </div>
+
+              {/* 編集エラーメッセージ */}
+              {lifecycle.status === "error" && lifecycle.error !== null && (
+                <p className="mt-3 text-sm text-error" role="alert">
+                  {lifecycle.error}
+                </p>
+              )}
             </div>
-
-            {/* 編集エラーメッセージ */}
-            {lifecycle.status === "error" && lifecycle.error !== null && (
-              <p className="mt-3 text-sm text-error" role="alert">
-                {lifecycle.error}
-              </p>
-            )}
-          </div>
-        )}
+          )}
 
         {/* finalized モード: 確定済み表示 + 訂正フロー */}
-        {lifecycle.mode === "finalized" && currentFinal !== null && (
+        {!isInitialLoading && lifecycle.mode === "finalized" && currentFinal !== null && (
           <div>
             {/* 確定済みバッジ — 不変性を示す視覚的キュー */}
             <div className="mb-4 flex items-center gap-2">

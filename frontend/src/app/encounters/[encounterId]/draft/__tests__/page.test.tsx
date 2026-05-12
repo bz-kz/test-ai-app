@@ -779,19 +779,22 @@ describe("DraftPage (FE-008: streaming generate)", () => {
 describe("DraftPage (FE-010: finalized auto-sync on mount)", () => {
   it("(a) finals + drafts 存在: 確定済みUIが描画され入力フォームは非表示・setDraft は未呼び出し", async () => {
     // useEncounterFinals が latest=FAKE_FINAL を返す → lifecycle は初期シードで finalized
+    // 重要: generate モックの draft を null に設定することで、FE-006 の既存 `draft === null` ガードでは
+    // setDraft を抑制できない状態を作り、新規 `encounterFinals.latest !== null` ガード (SPEC L142) を
+    // 実質的に検証する。draft=FAKE_DRAFT だと既存ガードでパスしてしまい本テストの目的が失われる。
     const mockSetDraft = vi.fn();
     await renderPage(
-      // generate: draft があっても setDraft は呼ばれない
-      { status: "success", draft: FAKE_DRAFT, setDraft: mockSetDraft },
+      // generate: draft=null → 既存の auto-seed ガードはパス。setDraft が呼ばれるかは finals ガード次第。
+      { status: "idle", draft: null, setDraft: mockSetDraft },
       // lifecycle はすでに finalized (initialFinal シード済みを再現)
       { mode: "finalized", final: FAKE_FINAL },
       // correction は view モード
       { mode: "view" },
-      // encounterDrafts は loaded
+      // encounterDrafts は loaded — latest あり (FE-006 既存パスが finals なしなら setDraft を呼ぶ条件)
       { status: "loaded", latest: FAKE_DRAFT, drafts: [FAKE_DRAFT] },
       // finalChain は idle
       {},
-      // encounterFinals は loaded — latest が存在する
+      // encounterFinals は loaded — latest が存在する → 新ガードで setDraft 抑制を期待
       { status: "loaded", finals: [FAKE_FINAL], latest: FAKE_FINAL }
     );
 
@@ -805,7 +808,8 @@ describe("DraftPage (FE-010: finalized auto-sync on mount)", () => {
     expect(
       screen.queryByRole("textbox", { name: "臨床入力 (Subjective/Objective)" })
     ).not.toBeInTheDocument();
-    // draft があっても setDraft は呼ばれない (finals が先にシードするため FE-006 の auto-seed 条件が成立しない)
+    // draft=null + drafts.latest=FAKE_DRAFT の状況下で、FE-010 の finals ガードが auto-seed を抑制する。
+    // ガードなしだとここで setDraft(FAKE_DRAFT) が呼ばれてしまう。
     expect(mockSetDraft).not.toHaveBeenCalled();
   });
 

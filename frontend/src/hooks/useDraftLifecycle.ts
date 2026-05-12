@@ -107,7 +107,7 @@ export function useDraftLifecycle(
     seededRef.current = true;
     setMode("finalized");
     setFinal(opts.initialFinal);
-  }, [opts?.initialFinal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [opts?.initialFinal]);
 
   // 進行中リクエストを管理する AbortController — 再クリック時に前のリクエストをキャンセルする
   const abortRef = useRef<AbortController | null>(null);
