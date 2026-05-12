@@ -11,28 +11,29 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                                       | Status | Gates Touched                  | Owner     |
-| ------- | ------------------------------------------- | ------ | ------------------------------ | --------- |
-| INF-001 | Runtime Topology                            | done   | G0                             | Generator |
-| BE-001  | Inference Adapter                           | done   | G1, G2, G3, G4, G5, G7         | Generator |
-| BE-002  | Persistence                                 | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-003  | API Surface                                 | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-004  | Patient endpoints                           | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-005  | Encounter endpoints                         | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-006  | Record Draft generation                     | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
-| BE-007  | Draft edit and finalize                     | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| INF-002 | Integration gap fixes                       | done   | G0, G1, G2, G3, G4, G6, G7     | Generator |
-| BE-008  | Record Final correction chain               | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| INF-003 | LLM memory budget alignment                 | done   | G5 (primary), G6, G0           | Planner   |
-| BE-009  | List drafts for encounter                   | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-010  | Security hardening bundle                   | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-011  | INFO-level UUID hardening sweep             | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-012  | X-Clinician-Id header auth                  | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-013  | Streaming draft endpoint                    | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
-| INF-004 | ASR compose service                         | done   | G0, G4, G5, G6, G7             | Generator |
-| BE-014  | ASR adapter + transcribe endpoint           | done   | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-015  | Hardening ADVICE bundle                     | done   | G1, G2, G3, G4                 | Generator |
-| BE-016  | Backend ffmpeg transcode + ASR error gating | done   | G0, G1, G2, G3, G4, G5         | Generator |
+| ID      | Title                                       | Status  | Gates Touched                  | Owner     |
+| ------- | ------------------------------------------- | ------- | ------------------------------ | --------- |
+| INF-001 | Runtime Topology                            | done    | G0                             | Generator |
+| BE-001  | Inference Adapter                           | done    | G1, G2, G3, G4, G5, G7         | Generator |
+| BE-002  | Persistence                                 | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-003  | API Surface                                 | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-004  | Patient endpoints                           | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-005  | Encounter endpoints                         | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-006  | Record Draft generation                     | done    | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| BE-007  | Draft edit and finalize                     | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-002 | Integration gap fixes                       | done    | G0, G1, G2, G3, G4, G6, G7     | Generator |
+| BE-008  | Record Final correction chain               | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-003 | LLM memory budget alignment                 | done    | G5 (primary), G6, G0           | Planner   |
+| BE-009  | List drafts for encounter                   | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-010  | Security hardening bundle                   | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-011  | INFO-level UUID hardening sweep             | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-012  | X-Clinician-Id header auth                  | done    | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-013  | Streaming draft endpoint                    | done    | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| INF-004 | ASR compose service                         | done    | G0, G4, G5, G6, G7             | Generator |
+| BE-014  | ASR adapter + transcribe endpoint           | done    | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-015  | Hardening ADVICE bundle                     | done    | G1, G2, G3, G4                 | Generator |
+| BE-016  | Backend ffmpeg transcode + ASR error gating | done    | G0, G1, G2, G3, G4, G5         | Generator |
+| BE-017  | Streaming transcribe endpoint               | pending | G1, G2, G3, G4, G5, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -683,3 +684,67 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Gates Touched:** G0, G1, G2, G3, G4, G5
 - **Affected Layers:** infrastructure (asr/whisper_cpp_client.py), docker (backend Dockerfile)
 - **Status:** qa
+
+---
+
+## Streaming transcribe endpoint (BE-017)
+
+- **Goal:** Add `POST /encounters/{encounter_id}/transcribe/stream` returning an SSE stream of progressive transcript chunks. Extends `LocalASRClient` Protocol with `stream_transcribe(...)`, slices the post-transcode 16 kHz mono PCM WAV into `ASR_STREAM_CHUNK_SECONDS`-long segments using Python's standard `wave` module, calls whisper-server `/inference` sequentially per chunk, and yields one SSE `data:` frame per chunk + one `event: complete` frame on completion + `event: error` on mid-stream failure. Non-streaming `POST /encounters/{id}/transcribe` (BE-014/016) MUST be preserved unchanged — it is the rollback path. The SSE envelope MUST mirror BE-013 (streaming draft) bit-for-bit so the frontend SSE parser can be lifted mechanically.
+- **Inputs:**
+  - SPEC.md#asr-layer-contract — streaming variant of the contract; rollback flag
+  - backend/SPEC.md#asr-adapter — `LocalASRClient.stream_transcribe`, `TranscribeChunk` shape, env vars
+  - backend/SPEC.md#transcribe-streaming-endpoint — endpoint contract, SSE frame envelope
+  - backend/SPEC.md#transcribe-endpoint — non-streaming endpoint preserved unchanged
+  - backend/SPEC.md#api-surface — error envelope, response_model rule
+  - backend/SPEC.md#authentication — `get_current_clinician` dependency required
+  - docs/adr/0003-streaming-asr-chunked.md — chunked-streaming approach, env-var rollback, latency profile
+  - backend/app/infrastructure/asr/whisper_cpp_client.py (BE-014/016) — existing `_transcode_to_wav` reused; sequential `/inference` call shape established
+  - backend/app/infrastructure/asr/client.py — `LocalASRClient` Protocol to extend
+  - backend/app/infrastructure/asr/fake_client.py — `FakeLocalASRClient` to extend for tests
+  - backend/app/interfaces/routers/drafts.py (BE-013) — SSE envelope precedent: `data: {...}\n\n`, `event: complete\ndata: {...}\n\n`, `event: error\ndata: {...}\n\n`
+  - backend/app/usecases/draft.py (BE-013) — `stream_record_draft` async-generator pattern
+  - backend/app/usecases/di.py — DI seam to extend with `make_stream_transcribe_audio`
+  - backend/app/interfaces/routers/transcribe.py (BE-014/016) — extend; do NOT create a second router file
+  - .claude/rules/local-llm-and-phi.md §1 §3 §4 — audio + transcript are PHI; SSE frames must respect masking
+- **Acceptance:**
+  - [ ] `app/infrastructure/asr/types.py` adds `TranscribeChunk` frozen dataclass: `text: str`, `chunk_index: int`, `chunk_count: int`, `done: bool`. Exported from `__init__.py`.
+  - [ ] `app/infrastructure/asr/config.py` adds env-var parsing for `ASR_STREAM_CHUNK_SECONDS` (default 10, must be in [5, 20] inclusive — raises a configuration error at import time if outside), `ASR_STREAM_TOTAL_TIMEOUT_S` (default 180), `ASR_STREAM_FIRST_CHUNK_LATENCY_S` (default 25). Tests cover boundary cases (4 → error, 5 → ok, 20 → ok, 21 → error).
+  - [ ] `app/infrastructure/asr/client.py` `LocalASRClient` Protocol gains `stream_transcribe(audio, params) -> AsyncIterator[TranscribeChunk]`. The Protocol is runtime-checkable; both `WhisperCppLocalASRClient` and `FakeLocalASRClient` MUST satisfy it.
+  - [ ] `app/infrastructure/asr/whisper_cpp_client.py` adds `_slice_wav_to_chunks(wav_bytes: bytes, chunk_seconds: int) -> list[bytes]`: uses `wave.open(io.BytesIO(wav_bytes), "rb")` to read the PCM frames, slices into chunk-second segments aligned on sample boundaries, rebuilds a complete WAV per slice using `wave.open(io.BytesIO(), "wb")`. No temp files. The last slice may be shorter than `chunk_seconds`. Returns at least 1 slice (the original WAV) if audio shorter than `chunk_seconds`.
+  - [ ] `_slice_wav_to_chunks` unit tests: 60 s audio → 6 slices @ 10 s; 25 s audio → 3 slices (10/10/5); 5 s audio → 1 slice; rejects non-WAV header (raises `ASRError`); rejects non-16kHz / non-mono / non-PCM_S16LE (raises `ASRError`).
+  - [ ] `WhisperCppLocalASRClient.stream_transcribe(audio, params)` implementation: (1) call existing `_transcode_to_wav(audio.audio_bytes, audio.content_type)`; (2) call `_slice_wav_to_chunks(wav_bytes, ASR_STREAM_CHUNK_SECONDS)`; (3) iterate slices, POST each to `/inference` sequentially with the same multipart form-data shape as `transcribe`, yielding `TranscribeChunk(text=text, chunk_index=i, chunk_count=N, done=False)` per success; (4) after the last chunk, yield `TranscribeChunk(text=assembled, chunk_index=N-1, chunk_count=N, done=True)`. Each chunk's text is empty-text-gated identically to BE-016 — empty text → `ASRError("transcribe returned empty text (chunk N)")`. Per-chunk httpx timeout is `ASR_TIMEOUT_S=90`. Audio bytes / wav bytes / sliced bytes are released as soon as the loop advances past their slice (no buffer accumulation in the iterator scope).
+  - [ ] `FakeLocalASRClient.stream_transcribe(audio, params)` implementation: yields N=3 chunks by default (split fixture transcript into thirds), with optional `per_chunk_delay_s: float = 0.0`, `force_error_at_chunk: int | None = None`, `force_timeout: bool = False`, `force_total_timeout: bool = False`. Errors raise `ASRError` from inside the iterator at the configured chunk.
+  - [ ] `app/usecases/transcribe_stream.py` exports `stream_transcribe_audio(*, audio, params, encounter_id, clinician_id, asr, encounter_repo) -> AsyncGenerator[TranscribeChunk, None]`: (1) verify encounter exists (`EncounterNotFound` raised synchronously before any ASR work — router maps to 404); (2) `async for chunk in asr.stream_transcribe(audio, params)` with `asyncio.wait_for(..., timeout=ASR_STREAM_TOTAL_TIMEOUT_S)` wrapped at the per-chunk await boundary (raises `ASRError(..., timeout=True)` on total-timeout); (3) yield each chunk. No DB writes. No audit log. INFO log: `short_id(encounter_id)`, `short_id(clinician_id)`, `chunk_index`, `chunk_count`. DEBUG log: chunk text length only (never the text body).
+  - [ ] `app/usecases/di.py` adds `make_stream_transcribe_audio(...)` factory + `StreamTranscribeAudioCallable = Callable[[AudioPayload, TranscribeParams | None, UUID, UUID], AsyncGenerator[TranscribeChunk, None]]`. Mirrors `make_stream_record_draft` (BE-013).
+  - [ ] `app/interfaces/routers/transcribe.py` is extended (NOT duplicated) with a new endpoint `POST /encounters/{encounter_id}/transcribe/stream`. The endpoint: (a) validates content-type (415), payload size ≤2 MB (422), header (401) synchronously — same checks as `post_transcribe`; (b) pre-reads the first chunk from the usecase generator to surface `EncounterNotFound` synchronously as 404 (mirrors BE-013 router pattern); (c) wraps remaining chunks in a `StreamingResponse(_sse_generator(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})`.
+  - [ ] SSE frame format (binding — identical to BE-013 envelope):
+    - Chunk: `data: {"text":"<chunk_text>","chunk_index":<int>,"chunk_count":<int>,"done":false}\n\n`
+    - Completion: `event: complete\ndata: {"full_text":"<assembled>","duration_seconds":<float|null>,"chunk_count":<int>}\n\n`
+    - Error: `event: error\ndata: {"code":"transcription_unavailable"|"transcription_timeout","chunk_index":<int>}\n\n`. After an error frame the stream closes.
+  - [ ] Error mapping: `ASRError(timeout=True)` mid-stream → `transcription_timeout`; any other `ASRError` mid-stream → `transcription_unavailable`. `exc.masked_context` MUST NOT appear in any SSE frame.
+  - [ ] PHI logging discipline at router level: `short_id(encounter_id)` and chunk_index at INFO; `mask_phi(chunk.text)` at DEBUG only. Filename from multipart is dropped at router boundary. No audio bytes, no PCM slice bytes, no raw transcript text in any logger call at INFO or above.
+  - [ ] Cancellation: when the HTTP connection drops (client AbortController), the SSE generator's outer `try/finally` MUST release the in-flight subprocess (transcode) via `proc.kill()` and any pending httpx call (httpx auto-cancels on context exit). Use FastAPI's standard `StreamingResponse` close hook — no custom cancellation channel.
+  - [ ] Layer rule: `grep -RnE '^from app\.infrastructure' backend/app/interfaces/routers/transcribe.py` → 0 hits (preserves the existing rule). `grep -RnE '^from app\.infrastructure\.asr' backend/app/{domain,usecases,interfaces}` returns hits only from `usecases/di.py`, `usecases/transcribe.py`, `usecases/transcribe_stream.py`.
+  - [ ] Non-streaming endpoint preserved bit-for-bit: `post_transcribe`, its tests (`tests/interfaces/test_transcribe_router.py` existing 9 tests), and `transcribe_audio` usecase tests (`tests/usecases/test_transcribe.py` existing 5 tests) MUST continue to pass unchanged. New tests are additive.
+  - [ ] Usecase tests in `tests/usecases/test_transcribe_stream.py`: (a) happy path — 3-chunk fake yields 3 data frames + 1 completion in order; (b) `EncounterNotFound` raised before any ASR call; (c) `ASRError` at chunk N → iterator stops at chunk N, no further yields; (d) total-timeout → `ASRError(timeout=True)` at the wait_for boundary; (e) clinician_id and encounter_id logged via `short_id(...)` only.
+  - [ ] Router tests extended in `tests/interfaces/test_transcribe_router.py`: (f) 200 SSE happy path asserting raw frame bytes contain `data:`, `event: complete`; (g) 401 missing header; (h) 404 unknown encounter (synchronous, before stream opens); (i) 415 unsupported content-type; (j) 422 payload too large; (k) mid-stream `transcription_unavailable` error frame (force_error_at_chunk=1); (l) mid-stream `transcription_timeout` error frame (force_total_timeout=True); (m) frame payload contains no `masked_context` substring or raw audio length value.
+  - [ ] Infrastructure tests in `tests/infrastructure/asr/test_whisper_cpp_client.py`: `_slice_wav_to_chunks` unit cases per acceptance bullet above; `stream_transcribe` happy path with mocked httpx; per-chunk empty-text gating raises `ASRError`. `tests/infrastructure/asr/test_fake_client.py` extended with stream cases (default chunk count, force_error_at_chunk, force_timeout, per_chunk_delay_s).
+  - [ ] G0: docker-compose env vars updated — `backend` service gains `ASR_STREAM_CHUNK_SECONDS=10`, `ASR_STREAM_TOTAL_TIMEOUT_S=180`, `ASR_STREAM_FIRST_CHUNK_LATENCY_S=25` (defaults match SPEC). No new ports, no new services.
+  - [ ] G1 pyright 0 errors; G2 ruff clean; G3 pytest passes net new tests ≥+15 over BE-016 baseline.
+  - [ ] G4 security-check: no hosted-ASR SDKs added; chunked PCM slices never written to disk; SSE frame payload contains only `code` and `chunk_index` on errors (verified via test); `mask_phi`/`short_id` discipline preserved.
+  - [ ] G5 cost-check: streaming first-chunk p95 ≤25 s and total p95 ≤180 s on the reference CPU for a 60 s synthetic clip via the `Fake` path with realistic `per_chunk_delay_s`; memory footprint unchanged from BE-016 (sequential calls reuse loaded whisper.cpp model).
+- **Out-of-scope:**
+  - Parallel chunk processing (whisper.cpp serializes; rejected in ADR-0003).
+  - Real-time mic→whisper continuous streaming (different audio-capture paradigm; ADR-required).
+  - Chunk overlap (0 s in v1; tracked as ADR-0003 follow-up).
+  - Removing or modifying `POST /encounters/{id}/transcribe` (rollback path; must remain unchanged).
+  - kotoba-whisper variant swap (ADR-0001 follow-up).
+  - Audio or transcript persistence; audit-log row for transcription.
+  - Multi-clip queueing; resumable streams.
+  - Frontend changes (FE-013).
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; ASR streaming path; `whisper.cpp medium-q5_0`; `ASR_TIMEOUT_S=90` per chunk; `ASR_STREAM_TOTAL_TIMEOUT_S=180` end-to-end; first-chunk p95 ≤25 s; co-resident with `gemma4:e4b`; memory footprint ~10 GiB LLM + ~1 GiB ASR, unchanged from BE-016.
+- **Data Sensitivity:** PHI; audio bytes, chunked PCM slices, chunk transcript text, and assembled transcript are PHI per ADR-0001 and `.claude/rules/local-llm-and-phi.md` §3. Never echoed in INFO logs; never in SSE error frame payloads; never persisted past the request lifetime.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** infrastructure (extend `LocalASRClient` Protocol, `WhisperCppLocalASRClient`, `FakeLocalASRClient`, `types.py`, `config.py`), usecases (new `transcribe_stream.py`, extend `di.py`), interfaces (extend `routers/transcribe.py`)
+- **Status:** pending

@@ -51,23 +51,37 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 
 ## ASR Layer Contract
 
-- **Goal:** Fix the API and behaviour the backend assumes from the local ASR service so voice input can be implemented, mocked, and replaced without touching consumers, on the same shape as `#inference-layer-contract` for the LLM.
+- **Goal:** Fix the API and behaviour the backend assumes from the local ASR service so voice input can be implemented, mocked, and replaced without touching consumers, on the same shape as `#inference-layer-contract` for the LLM. As of 2026-05-12 (ADR-0003) the contract has two variants — a non-streaming variant (default) and an opt-in streaming variant gated behind an env-var flag; both share the same `LocalASRClient` interface and underlying transcoder.
 - **Inputs:**
   - docs/adr/0001-voice-input-and-local-asr.md — variant pick, hardware footprint, network boundary.
+  - docs/adr/0003-streaming-asr-chunked.md — chunked-streaming approach, env-var rollback, latency profile.
   - .claude/rules/local-llm-and-phi.md — non-negotiable boundaries; audio/voice extension lands once ADR-0001 is `Accepted`.
 - **Acceptance:**
-  - [ ] Interface `LocalASRClient` lives in `backend/app/infrastructure/asr/` with `transcribe(audio: AudioPayload, params: TranscribeParams | None) -> TranscribeResponse`. The interface MUST NOT expose a streaming variant in v1 (out of scope per ADR-0001).
+  - [ ] Interface `LocalASRClient` lives in `backend/app/infrastructure/asr/` with `transcribe(audio: AudioPayload, params: TranscribeParams | None) -> TranscribeResponse` for the non-streaming path AND `stream_transcribe(audio: AudioPayload, params: TranscribeParams | None) -> AsyncIterator[TranscribeChunk]` for the streaming path. Both methods MUST coexist on every implementation; tests inject `FakeLocalASRClient` which serves both.
+  - [ ] `TranscribeChunk` is a frozen dataclass exporting `text: str`, `chunk_index: int` (0-based), `chunk_count: int` (total chunks the implementation will produce; -1 if unknown until completion), and `done: bool`. `done=True` chunks carry the final assembled text in `text` (mirroring `Chunk(text=..., done=True)` from `#inference-layer-contract`).
   - [ ] Concrete `WhisperCppLocalASRClient` targets `http://asr:8080` (whisper-server default) and the model name from configuration; configuration values `ASR_BASE_URL`, `ASR_MODEL`, `ASR_TIMEOUT_S` are read from environment, never hardcoded.
-  - [ ] Test-only `FakeLocalASRClient` is the default in unit tests; deterministic outputs from a fixture map keyed by input-bytes hash.
+  - [ ] Test-only `FakeLocalASRClient` is the default in unit tests; deterministic outputs from a fixture map keyed by input-bytes hash. The fake's `stream_transcribe` yields the same fixture text in N synthetic chunks (default 3), with a configurable per-chunk delay so timing-sensitive tests can drive the latency tiers deterministically.
   - [ ] Single supported variant: `whisper.cpp medium-q5_0` GGML. Switching variants (e.g. to `kotoba-whisper-v2.0-ggml`) requires a follow-up ADR per ADR-0001's `ASR_MODEL` discipline.
-  - [ ] Timeout default: `ASR_TIMEOUT_S=90` (cover RTF ≤1.5× of a 60 s clip on the reference CPU). Cancellable via `asyncio.Task.cancel()`.
-  - [ ] Accepted input: WebM/Opus container, single channel, ≤60 s wall-clock duration, ≤2 MB payload. Server-side resample to whisper-native 16 kHz mono is the ASR service's responsibility, not the backend's.
-  - [ ] On non-200 or timeout, the client raises a typed `ASRError` carrying a masked context, never the raw audio bytes or transcript. `ASRError` mirrors the `InferenceError` discipline from `#inference-layer-contract`.
-  - [ ] Audio bytes are never persisted to disk past the request lifetime. The backend MUST use `tempfile.SpooledTemporaryFile` (in-memory below threshold; auto-deleted otherwise) or stream the multipart body straight to the ASR client without writing to a named file.
-- **Out-of-scope:** Streaming/chunked transcription, diarization, multi-speaker separation, speaker identification, language other than Japanese, transcript versioning, transcript persistence on the backend (the frontend appends to `clinical_input` and discards on submit).
-- **Open-questions:** _(none — ADR-0001 closes them)_
-- **Inference Impact:** yes; ASR is a second inference path with its own model and latency budget. Compute budget independent of LLM but co-resident.
-- **Data Sensitivity:** PHI; audio bytes are PHI per ADR-0001 and the pending §3 update; clients MUST mask any logged reference to audio length, transcript, or filename. Audio bytes MUST NOT appear in logs, error envelopes, or stack traces.
+  - [ ] Non-streaming timeout default: `ASR_TIMEOUT_S=90` (cover RTF ≤1.5× of a 60 s clip on the reference CPU). Cancellable via `asyncio.Task.cancel()`.
+  - [ ] Streaming chunk-size default: `ASR_STREAM_CHUNK_SECONDS=10` (range 5–20; values outside the range MUST raise a configuration error at startup). Streaming per-chunk timeout reuses `ASR_TIMEOUT_S=90`; streaming end-to-end timeout: `ASR_STREAM_TOTAL_TIMEOUT_S=180` bounds the whole generator lifecycle and MUST trigger a streaming `ASRError(timeout=True)` if exceeded.
+  - [ ] Streaming chunk-overlap: 0 seconds in v1; overlap is explicitly an out-of-scope follow-up enhancement (see Out-of-scope below).
+  - [ ] First-chunk latency target for the streaming path: p95 ≤25 s (`ASR_STREAM_FIRST_CHUNK_LATENCY_S=25`) measured from the moment the chunked PCM data is ready to the moment the first SSE `data:` frame is flushed. Total wall-clock for a 60 s clip via streaming: p95 ≤180 s.
+  - [ ] Accepted input: WebM/Opus container, single channel, ≤60 s wall-clock duration, ≤2 MB payload. Backend transcodes to 16 kHz mono 16-bit PCM WAV before any inference call (BE-016); streaming path slices the resulting PCM data into chunk-second segments and rebuilds a WAV header per segment using only Python's standard `wave` module — no new heavy dep.
+  - [ ] On non-200 or timeout for either path, the client raises a typed `ASRError` carrying a masked context, never the raw audio bytes or transcript. `ASRError` mirrors the `InferenceError` discipline from `#inference-layer-contract`. Streaming mid-stream errors propagate through the async iterator and are mapped to SSE `event: error` frames at the interface layer (mirroring BE-013).
+  - [ ] Audio bytes are never persisted to disk past the request lifetime. The backend MUST use `tempfile.SpooledTemporaryFile` (in-memory below threshold; auto-deleted otherwise) or stream the multipart body straight to the ASR client without writing to a named file. The chunk-segmentation step MUST operate in-memory only; chunked PCM byte slices MUST NOT be written to named files.
+  - [ ] Rollback gate (binding): the streaming path is opt-in via the frontend env var `NEXT_PUBLIC_ASR_STREAMING_ENABLED` (default `"false"`). When `"false"` the frontend MUST consume only the non-streaming `POST /encounters/{id}/transcribe` endpoint; the backend MUST continue to serve that endpoint unchanged. The streaming endpoint `POST /encounters/{id}/transcribe/stream` is additive — removing it does not break any caller when the flag is `"false"`. Flipping the flag to `"false"` MUST restore BE-016 behaviour without a code change.
+- **Out-of-scope:**
+  - Parallel chunk processing — whisper.cpp serializes inference, so concurrent calls would queue server-side anyway and add no real throughput.
+  - Real-time microphone → whisper continuous streaming (different audio-capture paradigm; needs WebSocket or MediaRecorder timeslice → fetch-multiplexer; would require a separate ADR).
+  - Chunk overlap (non-zero); revisit after first streaming cut ships and word-boundary corruption is measured on real recordings.
+  - Diarization, multi-speaker separation, speaker identification.
+  - Language other than Japanese.
+  - Transcript versioning, transcript persistence on the backend (the frontend appends to `clinical_input` and discards on submit).
+  - kotoba-whisper variant swap (separate ADR per ADR-0001).
+  - Partial-result commits to textarea on mid-stream cancel/error (see `frontend/SPEC.md#voice-capture` for the binding rule: cancel/error discards accumulated chunks).
+- **Open-questions:** _(none — ADR-0003 closes them)_
+- **Inference Impact:** yes; ASR is a second inference path with its own model and latency budget. Compute budget independent of LLM but co-resident. Streaming variant adds per-chunk dispatch overhead but does not add a second model load — sequential calls reuse the loaded whisper.cpp medium-q5_0 weights.
+- **Data Sensitivity:** PHI; audio bytes are PHI per ADR-0001 and `.claude/rules/local-llm-and-phi.md` §3. Clients MUST mask any logged reference to audio length, transcript, or filename. Audio bytes MUST NOT appear in logs, error envelopes, stack traces, SSE frame payloads (only the masked transcript text travels over SSE — see BE-013 precedent), or any persistence layer. Chunked PCM byte slices are PHI on the same footing as the parent audio.
 - **Gates Touched:** G0, G4, G5, G7
 - **Affected Layers:** infrastructure, usecases
 

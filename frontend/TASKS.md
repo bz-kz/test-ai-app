@@ -11,21 +11,22 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID      | Title                                                    | Status | Gates Touched              | Owner     |
-| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
-| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-010  | Draft page auto-sync to finalized state                  | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-011  | Hardening ADVICE bundle (frontend)                       | done   | G1, G2, G3, G4             | Generator |
-| FE-012  | Root landing page UI                                     | done   | G1, G2, G3, G6, G7         | Generator |
+| ID      | Title                                                    | Status  | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ------- | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done    | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done    | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| FE-008  | Streaming draft UI consumer                              | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-010  | Draft page auto-sync to finalized state                  | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-011  | Hardening ADVICE bundle (frontend)                       | done    | G1, G2, G3, G4             | Generator |
+| FE-012  | Root landing page UI                                     | done    | G1, G2, G3, G6, G7         | Generator |
+| FE-013  | Streaming voice capture (env-var gated)                  | pending | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 ---
 
@@ -442,3 +443,62 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** none
 - **Gates Touched:** G1, G2, G3, G6, G7
 - **Affected Layers:** app (page.tsx), tests
+
+---
+
+## Streaming voice capture (FE-013)
+
+- **Goal:** Add an opt-in streaming code path to the existing `VoiceCapture` molecule that consumes BE-017's `POST /encounters/{id}/transcribe/stream` SSE endpoint. Gated by the new env var `NEXT_PUBLIC_ASR_STREAMING_ENABLED` (default `"false"`). When the flag is `false`, FE-009 behaviour MUST be preserved bit-for-bit. When the flag is `true`, the hook dispatches to the new streaming service, accumulates chunks in `useRef` (PHI — no DevTools snapshot), renders progressive feedback inside the molecule's aria-live region + a non-aria-live `<pre>` block, and only on `event: complete` calls `onTranscript(fullText)` once with the atomically-assembled transcript. Mid-stream cancel or error discards all chunks.
+- **Inputs:**
+  - frontend/SPEC.md#voice-capture — FE-009 acceptance preserved + FE-013 streaming additions; binding ruling on atomic textarea-append, cancel-discards-all, error-discards-all
+  - frontend/SPEC.md#voice-input-latency-ux — streaming-specific tier table (chunk-progress label + non-aria-live `<pre>`)
+  - SPEC.md#asr-layer-contract — streaming variant + rollback flag
+  - backend/SPEC.md#transcribe-streaming-endpoint — SSE envelope (chunk / complete / error frames) — identical to BE-013
+  - docs/adr/0003-streaming-asr-chunked.md — env-var gating, latency profile
+  - .claude/rules/local-llm-and-phi.md §1 §3 §4 — audio + chunk text + partial transcript are PHI; never in console/storage/URL
+  - frontend/src/services/drafts.ts — `streamRecordDraft` (FE-008): the SSE frame parser shape (`\n\n` split + `event:` / `data:` lines + `isJsonObject` guard) is the precedent to reuse mechanically
+  - frontend/src/services/transcribe.ts (FE-009) — `transcribeAudio` non-streaming function preserved unchanged
+  - frontend/src/hooks/useVoiceCapture.ts (FE-009) — extension target; `streaming` field added to return shape
+  - frontend/src/components/molecules/VoiceCapture.tsx (FE-009) — extension target; subtype-narrows on `streaming` to render chunk-progress + `<pre>`
+  - frontend/src/lib/constants.ts — extension target; `ASR_STREAMING_ENABLED` constant + reused `VOICE_CAPTURE_ERRORS` and `VOICE_CAPTURE_STATUS`
+- **Acceptance:**
+  - [ ] `src/lib/constants.ts` exports `ASR_STREAMING_ENABLED = process.env.NEXT_PUBLIC_ASR_STREAMING_ENABLED === "true"`. Default behaviour (env var absent or `"false"`) MUST resolve to `false`. Tests assert both branches by mocking `process.env`.
+  - [ ] `src/services/transcribe.ts` is extended (NOT replaced) with `streamTranscribeAudio(encounterId, blob, opts) -> Promise<void>`. Function signature mirrors `streamRecordDraft` (FE-008): callbacks `onChunk(text: string, chunkIndex: number, chunkCount: number)`, `onComplete(info: { fullText: string; durationSeconds: number | null; chunkCount: number })`, `onError(info: { kind: TranscribeStreamErrorKind; chunkIndex?: number })`, `signal?: AbortSignal`. Type `TranscribeStreamErrorKind = "encounter_not_found" | "validation_error" | "unsupported_format" | "transcription_unavailable" | "transcription_timeout" | "error"`.
+  - [ ] `streamTranscribeAudio` uses raw `fetch` (same precedent as `streamRecordDraft` — apiFetch does not support multipart + SSE), with `multipart/form-data` body (the `Content-Type` set automatically by the browser when `FormData` is the body — DO NOT set it manually), `X-Clinician-Id: CLINICIAN_ID` header. Parses SSE frames using the exact same `\n\n` + `event:` / `data:` envelope as `streamRecordDraft`, including the `isJsonObject` narrowing guard. Synchronous HTTP errors (401/404/415/422/503) MUST call `onError` with the appropriate kind BEFORE entering the stream-read loop. AbortError MUST be re-thrown (the caller's hook catches it).
+  - [ ] `src/services/__tests__/transcribe.test.ts` extended with ≥6 new tests for `streamTranscribeAudio`: (a) SSE happy path with 3 chunks + complete → callbacks fire in order; (b) 404 sync → onError "encounter_not_found"; (c) 415 sync → onError "unsupported_format"; (d) 422 sync → onError "validation_error"; (e) 503 sync → onError "transcription_unavailable"; (f) mid-stream `event: error` frame with code `transcription_timeout` → onError "transcription_timeout"; (g) AbortError mid-read → re-thrown.
+  - [ ] `src/hooks/useVoiceCapture.ts` extended: the return shape gains `streaming: { chunkIndex: number; chunkCount: number; partialText: string } | null` (null in non-streaming mode and before the first chunk arrives in streaming mode). Status machine unchanged — `uploading` covers both dispatch paths.
+  - [ ] Hook dispatch fork: on `recorder.onstop`, the hook reads `ASR_STREAMING_ENABLED` once. When `false`, the existing `transcribeAudio` call path is executed unchanged (FE-009 behaviour). When `true`, the hook calls `streamTranscribeAudio` with callbacks that: (a) `onChunk` — appends `text` to a `useRef<string[]>` buffer (PHI — never React state), bumps a separate `useState` for `streaming` to trigger re-render with the new `chunkIndex / chunkCount / partialText`; (b) `onComplete` — sets `transcript = info.fullText`, sets `status = "success"`, clears `streaming` to null, releases the audio Blob reference; (c) `onError` — chooses the matching JP error from `VOICE_CAPTURE_ERRORS`, sets `status = "error"`, clears `streaming`, releases the Blob and chunk buffer.
+  - [ ] Hook cancel during streaming (binding): `cancel()` calls `abortControllerRef.current?.abort()`, clears the chunk buffer (`useRef`), clears `streaming` to null, sets `status = "idle"`. No `onTranscript` invocation. No partial-transcript commit anywhere.
+  - [ ] Hook mid-stream error: when `onError` fires (any kind), the hook MUST NOT call `onTranscript` and MUST discard the chunk buffer. Status transitions to `"error"` with the matching `VOICE_CAPTURE_ERRORS` string.
+  - [ ] `src/hooks/__tests__/useVoiceCapture.test.ts` extended: existing FE-009 tests preserved unchanged; ≥6 new tests for the streaming branch — (a) 3-chunk happy path → `streaming` field updates per chunk, success on complete; (b) ASR_STREAMING_ENABLED=false → existing `transcribeAudio` mock is called, `streamTranscribeAudio` NOT called; (c) ASR_STREAMING_ENABLED=true → `streamTranscribeAudio` mock is called, `transcribeAudio` NOT called; (d) cancel during streaming → buffer discarded, `streaming = null`, `status = "idle"`, no onTranscript; (e) mid-stream `transcription_unavailable` → status="error", `streaming = null`, no onTranscript; (f) mid-stream `transcription_timeout` → status="error" with the timeout-specific JP string.
+  - [ ] `src/components/molecules/VoiceCapture.tsx` extended: when `streaming !== null`, the existing aria-live region renders `"文字起こし中… (チャンク {streaming.chunkIndex + 1} / {streaming.chunkCount})"` instead of the FE-009 spinner+text. A new non-aria-live `<pre className="max-h-32 overflow-auto whitespace-pre-wrap text-sm">` block below the live region displays `streaming.partialText`. The Cancel button remains visible at the same elapsed-time threshold as FE-009 (`ASR_LATENCY_CANCEL_MS`). The parent textarea is NOT touched during streaming.
+  - [ ] Atomic textarea append on completion: when `streaming` transitions null → null (i.e. on `onComplete` clearing it) and `status` transitions to `"success"`, the existing `success → onTranscript` effect fires once. The full transcript appends to the parent textarea with the existing newline-separator convention.
+  - [ ] `src/components/molecules/__tests__/VoiceCapture.test.tsx` extended: existing FE-009 tests preserved; ≥5 new tests for the streaming UI — (a) renders chunk-progress label while `streaming !== null`; (b) renders `<pre>` with accumulated partial text; (c) Cancel button click discards chunks and returns to idle (no `onTranscript`); (d) onComplete triggers a single `onTranscript(fullText)` call with the full assembled text; (e) prefers-reduced-motion: spinner static, no animated scroll on chunk append.
+  - [ ] Cross-cutting checks (binding):
+    - 0 `fetch(` in components/app (raw fetch only in `transcribe.ts`, same as `drafts.ts`).
+    - 0 storage writes (chunks live in `useRef` and accumulated string state only).
+    - 0 `console.*` (no chunk text, no encounter_id, no transcript).
+    - 0 `: any`.
+    - 0 `dangerouslySetInnerHTML`.
+    - 0 references to Web Speech API or `webkitSpeechRecognition`.
+  - [ ] No FE-001..012 regression: the full frontend test suite (374 tests at FE-012 baseline) MUST stay green. Net new test count ≥+15 from the additions above.
+  - [ ] G1 `npx tsc --noEmit` — 0 errors.
+  - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [ ] G3 `npm test -- --run` — all tests pass.
+  - [ ] G4 security-check: no hosted-ASR SDKs added; no PHI in console/storage/URL; chunk text never inside aria-live region (chunk-progress counter only); `<pre>` block exists but is not aria-live.
+  - [ ] G5 cost-check: when `ASR_STREAMING_ENABLED=true` against a real backend, first-chunk visible-feedback p95 ≤25 s on the reference CPU; chunk-progress label updates within 100 ms of `onChunk` callback.
+  - [ ] docker-compose.yml frontend service env adds `NEXT_PUBLIC_ASR_STREAMING_ENABLED=false` (default off; per ADR-0003 rollback contract).
+- **Out-of-scope:**
+  - Backend changes (BE-017 ships first).
+  - Real-time mic→backend continuous streaming (different audio-capture paradigm; ADR-required).
+  - Chunk overlap UI hints.
+  - Committing partial transcripts to the parent textarea on cancel/error (binding rule: full-or-nothing).
+  - Caret cursor during streaming transcription (reserved for LLM streaming per `#ai-output-patterns`).
+  - Removing `transcribeAudio` (non-stream) or the FE-009 code path — both are the rollback path.
+  - Streaming caret/cursor visuals during transcription.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; consumes either `POST /encounters/{id}/transcribe` (FE-009 path, when flag=false) or `POST /encounters/{id}/transcribe/stream` (FE-013 path, when flag=true).
+- **Data Sensitivity:** PHI; audio Blob in component memory only; chunked partial transcript in `useRef` only (no React state for the chunk-by-chunk text body — DevTools snapshot risk); aria-live region announces chunk-index counters only, never transcript text; `<pre>` block is visual-only (no aria-live).
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** services (extend `transcribe.ts` with `streamTranscribeAudio`), hooks (extend `useVoiceCapture`), molecules (extend `VoiceCapture`), lib (extend `constants.ts` with `ASR_STREAMING_ENABLED`), compose (frontend env var)
+- **Status:** pending

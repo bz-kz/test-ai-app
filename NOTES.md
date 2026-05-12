@@ -19,6 +19,7 @@ This file is the index of architecture decisions for the project. Decision recor
 
 ## Index
 
-| ID                                                     | Title                             | Status   | Date       |
-| ------------------------------------------------------ | --------------------------------- | -------- | ---------- |
-| [ADR-0001](docs/adr/0001-voice-input-and-local-asr.md) | Voice input and local ASR service | Proposed | 2026-05-12 |
+| ID                                                     | Title                                       | Status   | Date       |
+| ------------------------------------------------------ | ------------------------------------------- | -------- | ---------- |
+| [ADR-0001](docs/adr/0001-voice-input-and-local-asr.md) | Voice input and local ASR service           | Accepted | 2026-05-12 |
+| [ADR-0003](docs/adr/0003-streaming-asr-chunked.md)     | Chunked streaming ASR with env-var rollback | Accepted | 2026-05-12 |
