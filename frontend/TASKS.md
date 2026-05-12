@@ -11,18 +11,19 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID      | Title                                                    | Status | Gates Touched              | Owner     |
-| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
-| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| ID      | Title                                                    | Status  | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ------- | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done    | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done    | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done    | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| FE-008  | Streaming draft UI consumer                              | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done    | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-010  | Draft page auto-sync to finalized state                  | pending | G1, G2, G3, G4, G6, G7     | Generator |
 
 ---
 
@@ -326,6 +327,39 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; audio bytes + transcript are PHI; Blob in useRef only; never in console/storage/URL.
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** atoms (RecordButton), molecules (VoiceCapture), hooks (useVoiceCapture), services (transcribe), app (draft page), lib (constants)
+
+---
+
+## Draft page auto-sync to finalized state (FE-010)
+
+- **Goal:** Fix the draft-page UX bug where a fresh navigation to `/encounters/{id}/draft` for an encounter with existing `record_final` rows renders the input form instead of the finalized-state UI. After this Block, the page MUST detect existing finals on mount and render the same finalized UI that `lifecycle.approve()` produces — preventing accidental re-generation over a signed chart.
+- **Inputs:**
+  - frontend/SPEC.md#draft-page-finalized-auto-sync — full acceptance criteria
+  - frontend/SPEC.md#ai-output-patterns — finalized-state visual contract (badge, AIIndicatedText `ariaLabel="確定カルテ"`, ChainList)
+  - frontend/src/services/finals.ts — existing `listFinalsByEncounter` (reused as-is)
+  - frontend/src/hooks/useEncounterDrafts.ts — architectural template for new `useEncounterFinals`
+  - frontend/src/hooks/useDraftLifecycle.ts — extension target for `initialFinal` parameter
+  - frontend/src/hooks/useFinalChain.ts — reused unchanged
+  - frontend/src/app/encounters/[encounterId]/draft/page.tsx — extension target
+  - frontend/src/app/encounters/[encounterId]/draft/**tests**/page.test.tsx — extension target
+  - .claude/rules/local-llm-and-phi.md §3, §4 — final.content is PHI
+- **Acceptance:**
+  - [ ] `src/hooks/useEncounterFinals.ts` exports `useEncounterFinals()` returning `{ status, finals, latest, error, load }`. AbortController per call; AbortError silently swallowed.
+  - [ ] `src/hooks/__tests__/useEncounterFinals.test.ts` — ≥5 unit tests per SPEC acceptance.
+  - [ ] `src/hooks/useDraftLifecycle.ts` extended: optional `initialFinal?: RecordFinal | null`. When non-null on first render → `mode="finalized"` + latch.
+  - [ ] `src/hooks/__tests__/useDraftLifecycle.test.ts` extended: ≥3 new tests. Existing FE-004/005 tests stay green.
+  - [ ] `src/app/encounters/[encounterId]/draft/page.tsx` extended: calls `useEncounterFinals.load(encounterId)` in parallel with `useEncounterDrafts.load`; passes `latest` into `useDraftLifecycle` as `initialFinal`; loading indicator covers both fetches; suppresses draft auto-seed when finals exist.
+  - [ ] `src/app/encounters/[encounterId]/draft/__tests__/page.test.tsx` extended: `renderPage` signature gains 6th optional override for `useEncounterFinals`; new `describe("DraftPage (FE-010: finalized auto-sync on mount)")` with ≥4 tests covering the four edge cases.
+  - [ ] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 `console.*`; 0 `: any`; no raw HTML; no new heavy dep.
+  - [ ] No FE-003..009 regression: full test suite passes.
+  - [ ] G1 `npx tsc --noEmit` clean; G2 `npx eslint . && npx prettier --check .` clean; G3 `npm test -- --run` all pass; net count > 353.
+  - [ ] G4 security-check skill invoked; PHI handling verified.
+- **Out-of-scope:** Server-pushed revalidation; non-head final selection; sibling encounter finals; user-visible error on finals fetch fail; refactoring useEncounterDrafts/useEncounterDetail; combining drafts/finals into single hook; backend changes; cost-check (no inference).
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; `RecordFinal.content` rendered per `.claude/rules/local-llm-and-phi.md` §4. Identical handling to FE-006's chain rendering.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** hooks (new `useEncounterFinals`, extended `useDraftLifecycle`), app (draft page extension)
 
 ---
 

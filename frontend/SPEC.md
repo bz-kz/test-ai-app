@@ -121,6 +121,48 @@ Sub-spec for the Next.js (15+) / TypeScript / Tailwind frontend. Extends, never 
 - **Inference Impact:** yes; calibrates UX for the ASR path.
 - **Gates Touched:** G5, G6
 
+## Draft Page Finalized Auto-Sync
+
+- **Goal:** When a clinician navigates to `/encounters/[encounterId]/draft` for an encounter whose `record_final` table already contains at least one row, the page MUST render the finalized-state UI on mount — not the input form. This is the same finalized-state UI that the page reaches via `lifecycle.approve()` in the same session (確定済みバッジ + AIIndicatedText with `ariaLabel="確定カルテ"` + 訂正 Button + ChainList). The input textarea, voice capture, and "下書きを生成" button MUST be hidden in this mode. The fix is additive — the FE-006 auto-load path for drafts MUST continue to work unchanged for encounters that have drafts but no finals.
+- **Inputs:**
+  - frontend/SPEC.md#ai-output-patterns — finalized-state visual contract (badge, AIIndicatedText `ariaLabel="確定カルテ"`, ChainList)
+  - frontend/src/services/finals.ts — existing `listFinalsByEncounter(encounterId)` returning `{ kind: "found"; finals: RecordFinal[] } | { kind: "error" }` (created in FE-007b)
+  - frontend/src/hooks/useFinalChain.ts — takes `finalId`, not `encounterId`; reused unchanged
+  - frontend/src/hooks/useEncounterDrafts.ts — existing FE-006 auto-load pattern serves as the architectural template
+  - frontend/src/hooks/useDraftLifecycle.ts — current mode initialiser is `"view"`; needs a seed-from-finalized capability
+  - backend `GET /encounters/{encounterId}/finals` — returns `RecordFinal[]` newest-first (BE-008/009 contract; `finals[0]` is the head)
+  - .claude/rules/local-llm-and-phi.md §3, §4 — final content is PHI; no console/storage/URL writes
+- **Acceptance:**
+  - [ ] A new hook `src/hooks/useEncounterFinals.ts` exports `useEncounterFinals()` mirroring `useEncounterDrafts` shape: `status: "idle" | "loading" | "loaded" | "error"`, `finals: RecordFinal[]`, `latest: RecordFinal | null` (= `finals[0] ?? null`), `error: string | null` (JP, PHI-free), `load: (encounterId: string) => void`. AbortController per call. No PHI in logs.
+  - [ ] `useDraftLifecycle` accepts a new optional parameter `initialFinal?: RecordFinal | null`. When `initialFinal` is non-null on first render, `mode` initialises to `"finalized"` and `final` initialises to that value; subsequent renders MUST NOT re-seed (latch via `useRef` boolean or lazy `useState` initialiser). When absent, behaviour is unchanged.
+  - [ ] `src/app/encounters/[encounterId]/draft/page.tsx` is extended to:
+    - Call `useEncounterFinals().load(encounterId)` on mount, in parallel with the existing `useEncounterDrafts.load(encounterId)` call.
+    - Pass `useEncounterFinals.latest` to `useDraftLifecycle` as `initialFinal`.
+    - While either fetch is `loading`, render the existing "下書きを確認しています…" indicator and render neither the input form nor the finalized UI.
+    - Suppress the FE-006 drafts auto-seed (`setDraft(encounterDrafts.latest)`) when `encounterFinals.latest !== null`.
+  - [ ] Edge-case rulings (binding):
+    - (a) **Finals exist AND drafts exist** — finalized state wins. The page renders the finalized UI; drafts are ignored. Rationale: `record_final` is canonical; remaining drafts have been superseded.
+    - (b) **Neither finals nor drafts** — current "下書きを生成" input-form path is preserved unchanged.
+    - (c) **Drafts exist but no finals** — current FE-006 auto-load path is preserved unchanged.
+    - (d) **Finals fetch fails (`status="error"`)** — silent fallback: the page proceeds as if no finals exist. No toast, no blocking error. Rationale matches FE-006's draft-fetch error treatment.
+    - (e) **Cross-tab race (correction created in another tab while page open)** — out-of-scope for v1; refresh required.
+  - [ ] `useEncounterFinals` MUST have ≥5 unit tests covering: (i) loaded+non-empty selects newest as `latest`; (ii) loaded+empty → `latest === null`; (iii) service error → `status="error"`; (iv) AbortController cancels in-flight call when `load` invoked twice; (v) AbortError silently swallowed.
+  - [ ] `useDraftLifecycle` MUST have ≥3 new tests covering: (i) `initialFinal !== null` → `mode === "finalized"` on first render; (ii) `initialFinal === null` → existing `"view"` default preserved; (iii) `initialFinal` flips null→RecordFinal between renders → mode MUST NOT change (latch).
+  - [ ] Page integration tests MUST cover the four edge cases on mount: (a) finals + drafts → finalized UI shown, input form NOT shown, `setDraft` NOT called; (b) neither → input form shown after both fetches settle; (c) drafts only → FE-006 auto-seed path still fires; (d) finals fetch errors → silent fallback.
+  - [ ] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 `console.*`; 0 `: any`; no raw HTML injection.
+- **Out-of-scope:**
+  - Server-pushed revalidation while the page is open (edge case (e) above).
+  - Selecting a non-head final from the chain as `currentFinal` (head-only view).
+  - Showing finals from sibling encounters.
+  - Surfacing a user-visible error when finals fetch fails (silent fallback by SPEC ruling).
+  - Refactoring `useEncounterDrafts` / `useEncounterDetail` to share a base hook.
+  - Combining the drafts and finals fetches into a single hook on the draft page.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no — this Block performs no inference calls; only DB-read GET endpoints.
+- **Data Sensitivity:** PHI; `RecordFinal.content` is rendered in the operational-read path per `.claude/rules/local-llm-and-phi.md` §4. Never in `console.*`, `localStorage`/`sessionStorage`/`IndexedDB`, or URL. Masking discipline of FE-006 applies identically.
+- **Gates Touched:** G1, G2, G3, G4, G6, G7
+- **Affected Layers:** hooks (new `useEncounterFinals` + extended `useDraftLifecycle` signature), app (draft page extension)
+
 ## Default Gates
 
 Every frontend feature task sets at minimum: `Gates Touched: G1, G2, G3, G6, G7`. Add G4 for any task that displays PHI fields, G5 for any task with inference UI, G0 for changes that touch `docker-compose.yml` or the dev container.
