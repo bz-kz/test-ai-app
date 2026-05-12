@@ -16,8 +16,9 @@
  *
  *   チャンクテキストの蓄積は useRef<string[]> に行う (PHI — React state に入れると
  *   DevTools のスナップショットで露出するリスクがある)。
- *   streaming.partialText は onChunk のたびに tick カウンタ (useState<number>) を
- *   インクリメントして再レンダーをトリガーし、ref から読み取って導出する。
+ *   streaming.partialText は chunkTextBufRef から導出した値であり、
+ *   React state には一切格納しない。カウンタ (chunkIndex / chunkCount) だけを
+ *   useState<StreamingCounters> に保持し、再レンダー後に ref から結合して返す。
  *
  * PHI ルール (local-llm-and-phi.md §3/§4):
  * - audio Blob は useRef に保持し、localStorage / sessionStorage / IndexedDB に書かない。
@@ -59,13 +60,16 @@ export interface VoiceCaptureError {
 
 /**
  * ストリーミングパスがアクティブかつ少なくとも 1 チャンクが届いているときに非 null。
- * partialText: チャンクバッファから導出した結合文字列 (PHI — React state ではなく ref から取得)。
+ * partialText: chunkTextBufRef から毎レンダー時に導出する (PHI — React state に格納しない)。
  */
 export interface StreamingInfo {
   chunkIndex: number;
-  chunkCount: number;
+  chunkCount: number | null;
   partialText: string;
 }
+
+/** React state に保持するカウンタのみ (PHI テキストを含まない) */
+type StreamingCounters = { chunkIndex: number; chunkCount: number | null };
 
 export interface UseVoiceCaptureReturn {
   status: VoiceCaptureStatus;
@@ -94,8 +98,8 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
   const [error, setError] = useState<VoiceCaptureError | null>(null);
   const [autoStopped, setAutoStopped] = useState(false);
 
-  // ストリーミング状態: chunk 到着で再レンダーをトリガーするカウンタ
-  const [streaming, setStreaming] = useState<StreamingInfo | null>(null);
+  // ストリーミング状態: PHI テキストを含まないカウンタのみ React state に保持する
+  const [streamingCounters, setStreamingCounters] = useState<StreamingCounters | null>(null);
 
   // PHI: audio Blob / チャンクバッファは useRef に保持する (DevTools スナップショット回避)
   const chunksRef = useRef<Blob[]>([]);
@@ -165,7 +169,7 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
     setError(null);
     setTranscript("");
     setAutoStopped(false);
-    setStreaming(null);
+    setStreamingCounters(null);
 
     let stream: MediaStream;
     try {
@@ -227,12 +231,9 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
             // PHI: text を console.* に出力しない
             chunkTextBufRef.current.push(text);
             lastChunkInfoRef.current = { chunkIndex, chunkCount };
-            // ref から導出した partialText で streaming state を更新し再レンダーをトリガーする
-            setStreaming({
-              chunkIndex,
-              chunkCount,
-              partialText: chunkTextBufRef.current.join(""),
-            });
+            // カウンタのみ state に保持し再レンダーをトリガーする。
+            // partialText は ref から毎レンダー時に導出するため state に格納しない。
+            setStreamingCounters({ chunkIndex, chunkCount });
           },
 
           onComplete: (info) => {
@@ -242,7 +243,7 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
             }
             // PHI: fullText を console.* に出力しない
             setTranscript(info.fullText);
-            setStreaming(null);
+            setStreamingCounters(null);
             chunkTextBufRef.current = [];
             lastChunkInfoRef.current = null;
             setStatus("success");
@@ -255,7 +256,7 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
             }
             chunkTextBufRef.current = [];
             lastChunkInfoRef.current = null;
-            setStreaming(null);
+            setStreamingCounters(null);
 
             if (info.kind === "transcription_unavailable") {
               setError({
@@ -289,7 +290,7 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
           }
           chunkTextBufRef.current = [];
           lastChunkInfoRef.current = null;
-          setStreaming(null);
+          setStreamingCounters(null);
           setError({ kind: "generic", message: VOICE_CAPTURE_ERRORS.generic });
           setStatus("error");
         });
@@ -366,10 +367,10 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    // チャンクバッファを破棄し streaming を null にリセットする
+    // チャンクバッファを破棄し streamingCounters を null にリセットする
     chunkTextBufRef.current = [];
     lastChunkInfoRef.current = null;
-    setStreaming(null);
+    setStreamingCounters(null);
     cleanup();
     setElapsedMs(0);
     setAutoStopped(false);
@@ -384,6 +385,11 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
       stop();
     }
   }, [status, elapsedMs, stop]);
+
+  // partialText は毎レンダー時に chunkTextBufRef から導出する (PHI を React state に格納しない)
+  const streaming: StreamingInfo | null = streamingCounters
+    ? { ...streamingCounters, partialText: chunkTextBufRef.current.join("") }
+    : null;
 
   return { status, elapsedMs, transcript, error, autoStopped, streaming, start, stop, cancel };
 }
