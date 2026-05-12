@@ -26,7 +26,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | FE-010  | Draft page auto-sync to finalized state                  | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | FE-011  | Hardening ADVICE bundle (frontend)                       | done   | G1, G2, G3, G4             | Generator |
 | FE-012  | Root landing page UI                                     | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-013  | Streaming voice capture (env-var gated)                  | qa     | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-013  | Streaming voice capture (env-var gated)                  | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 ---
 
