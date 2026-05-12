@@ -1,6 +1,6 @@
 # ADR 0005: Agents may push to non-default branches and open PRs (no merge)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-12
 - **Owner:** Planner (Claude Opus 4.7)
 - **Related Spec:** `AGENTS.md` §8 (Commit & branching), `.claude/rules/local-llm-and-phi.md` §6 (verification commands the user wants run pre-push)
