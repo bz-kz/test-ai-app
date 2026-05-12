@@ -162,7 +162,10 @@ async def unhandled_exception_handler(
     tb_frames = traceback.extract_tb(exc.__traceback__)
     if tb_frames:
         top_frame = tb_frames[-1]
-        location = f"{top_frame.filename}:{top_frame.lineno}"
+        # コンテナ内の絶対パス (/app/app/usecases/...) からプロジェクト相対パス
+        # (app/usecases/...) に正規化する。実装構造の漏洩を最小化するため。
+        rel_filename = top_frame.filename.removeprefix("/app/")
+        location = f"{rel_filename}:{top_frame.lineno}"
     else:
         location = "<unknown>"
     exc_class = f"{exc.__class__.__module__}.{exc.__class__.__name__}"

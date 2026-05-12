@@ -1,6 +1,7 @@
-"""app/domain/phi.py のユニットテスト (BE-010)。
+"""app/domain/phi.py のユニットテスト (BE-010 / BE-015)。
 
 mask_phi の既存テストと short_id の新規テストを収録する。
+BE-015 Item 1: 4 文字以下の短い値が "***" を返すことを追加検証する。
 """
 
 from __future__ import annotations
@@ -20,9 +21,9 @@ class TestMaskPhi:
     def test_empty_string_returns_empty(self) -> None:
         assert mask_phi("") == ""
 
-    def test_short_string_masked_beyond_8_chars(self) -> None:
+    def test_five_char_string_returns_preview(self) -> None:
+        """5 文字は閾値 (4 文字) を超えるため、先頭 5 文字 + masked 0 chars を返す。"""
         result = mask_phi("hello")
-        # 5 文字 → 先頭 5 文字 + masked 0 chars
         assert result == "hello...[masked 0 chars]"
 
     def test_long_string_preview_8_chars(self) -> None:
@@ -34,6 +35,38 @@ class TestMaskPhi:
     def test_exactly_8_chars_no_masked_suffix(self) -> None:
         result = mask_phi("12345678")
         assert result == "12345678...[masked 0 chars]"
+
+    # -----------------------------------------------------------------------
+    # BE-015 Item 1 — 短い値のマスク動作
+    # -----------------------------------------------------------------------
+
+    def test_empty_string_returns_empty_be015(self) -> None:
+        """空文字列は既存と同じく空文字列を返す。"""
+        assert mask_phi("") == ""
+
+    def test_one_char_value_returns_stars(self) -> None:
+        """1 文字は ≤4 文字閾値に該当するため '***' を返す。"""
+        assert mask_phi("A") == "***"
+
+    def test_four_char_value_returns_stars(self) -> None:
+        """4 文字は閾値ちょうどのため '***' を返す。値が全公開されない。"""
+        result = mask_phi("1234")
+        assert result == "***"
+        # 元の値が一切含まれない
+        assert "1234" not in result
+
+    def test_five_char_value_returns_preview_not_stars(self) -> None:
+        """5 文字は閾値を超えるため '***' ではなくプレビュー形式を返す。"""
+        result = mask_phi("12345")
+        assert result != "***"
+        assert "[masked" in result
+
+    def test_nine_char_value_masks_tail(self) -> None:
+        """9 文字: 先頭 8 文字を保持し残り 1 文字をマスクする。"""
+        result = mask_phi("abcdefghi")
+        assert result == "abcdefgh...[masked 1 chars]"
+        # 9 文字目 'i' はレスポンスに含まれない
+        assert result.endswith("...[masked 1 chars]")
 
 
 # ---------------------------------------------------------------------------

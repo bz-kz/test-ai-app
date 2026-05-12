@@ -31,6 +31,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | BE-013  | Streaming draft endpoint          | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
 | INF-004 | ASR compose service               | done   | G0, G4, G5, G6, G7             | Generator |
 | BE-014  | ASR adapter + transcribe endpoint | done   | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-015  | Hardening ADVICE bundle           | qa     | G1, G2, G3, G4                 | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -539,7 +540,7 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
   - [ ] Non-stream endpoint tests unchanged.
 - **Out-of-scope:** Resumable streams; multi-client concurrent streams; WebSocket/WebTransport; editing/finalizing via stream.
 - **Open-questions:** _(none)_
-- **Inference Impact:** yes; stream path; same model `gemma4:e4b`; budget same as BE-006; 120 s end-to-end.
+- **Inference Impact:** yes; stream path; model `gemma4:e4b`; prompt ≤4k tokens, output ≤1.5k tokens; 120 s end-to-end timeout; system-memory footprint ~10 GiB (publisher-supplied default precision, post-INF-003); Docker memory floor ≥13 GiB (post-INF-004, co-resident with whisper.cpp medium-q5_0).
 - **Data Sensitivity:** PHI; clinical_input and chunk.text are PHI; never echoed in logger or SSE error frames.
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** usecases (extend draft.py + di.py), interfaces (extend drafts router)
@@ -614,4 +615,35 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI; audio bytes and transcript are PHI; never logged at INFO; never persisted.
 - **Gates Touched:** G0, G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** infrastructure (new asr/), usecases (transcribe.py + di.py), interfaces (new router, main.py health)
+- **Status:** qa
+
+---
+
+## Hardening ADVICE bundle (BE-015)
+
+- **Goal:** Address three accumulated defense-in-depth ADVICE items in one focused commit. None block functionality; all reduce PHI re-identification risk or doc drift.
+- **Inputs:**
+  - backend/app/domain/phi.py — `mask_phi` current implementation (short-value edge behavior)
+  - backend/app/interfaces/exception_handlers.py — `unhandled_exception_handler` absolute container path
+  - backend/TASKS.md — BE-013 Inference Impact field (stale hardware budget reference)
+  - .claude/rules/local-llm-and-phi.md §3 — PHI in logs
+  - BE-010 security-check ADVICE (mask_phi short-value preview)
+  - BE-010 security-check ADVICE (5xx log container-absolute filename)
+  - BE-013 cost-check ADVICE (SPEC reference drift on hardware budget)
+- **Acceptance:**
+  - [x] Item 1: `mask_phi` returns `"***"` for values ≤4 chars; values ≥5 chars retain existing preview behavior. `grep -nE 'preview_len = min' backend/app/domain/phi.py` → guarded by `len(value) <= 4` branch.
+  - [x] Item 1 tests: `tests/domain/test_phi.py` has ≥3 new tests covering empty, 1-char, 4-char (→ `"***"`), 5-char (→ preview), 9-char (→ tail masked).
+  - [x] Item 2: `unhandled_exception_handler` log uses `top_frame.filename.removeprefix("/app/")` — project-relative path only. `grep -n 'removeprefix' backend/app/interfaces/exception_handlers.py` → 1 hit.
+  - [x] Item 2: existing `test_exception_handlers.py` tests for log format remain green (assert `.py:` still present).
+  - [x] Item 3: BE-013 `Inference Impact` field updated to state budget explicitly (post-INF-003/INF-004 values) instead of deferring to stale BE-006 reference. No code change.
+  - [x] G1 pyright — 0 errors
+  - [x] G2 ruff check + ruff format --check — clean
+  - [x] G3 pytest -q — all tests pass; ≥3 new mask_phi tests
+  - [x] G4 security-check — PASS, no CRITICAL findings
+- **Out-of-scope:** Frontend ADVICE items (FE-011). Refactoring mask_phi to SHA hash strategy. New log destinations. PHI rule §3 amendment.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI (hardening of PHI log surfaces — no new exposure introduced)
+- **Gates Touched:** G1, G2, G3, G4
+- **Affected Layers:** domain (mask_phi), interfaces (exception_handlers), docs (TASKS.md)
 - **Status:** qa
