@@ -32,7 +32,7 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 | INF-004 | ASR compose service                         | done   | G0, G4, G5, G6, G7             | Generator |
 | BE-014  | ASR adapter + transcribe endpoint           | done   | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
 | BE-015  | Hardening ADVICE bundle                     | done   | G1, G2, G3, G4                 | Generator |
-| BE-016  | Backend ffmpeg transcode + ASR error gating | qa     | G0, G1, G2, G3, G4, G5         | Generator |
+| BE-016  | Backend ffmpeg transcode + ASR error gating | done   | G0, G1, G2, G3, G4, G5         | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
