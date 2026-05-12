@@ -11,19 +11,20 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID      | Title                                                    | Status | Gates Touched              | Owner     |
-| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
-| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
-| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-010  | Draft page auto-sync to finalized state                  | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| ID      | Title                                                    | Status      | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ----------- | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done        | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| FE-008  | Streaming draft UI consumer                              | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-010  | Draft page auto-sync to finalized state                  | done        | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-011  | Hardening ADVICE bundle (frontend)                       | in-progress | G1, G2, G3, G4             | Generator |
 
 ---
 
@@ -382,3 +383,28 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Gates Touched:** G1, G2, G3, G4, G6, G7
 - **Affected Layers:** atoms, molecules, organisms
 - **Status:** sample only — do not implement.
+
+---
+
+## Hardening ADVICE bundle (FE-011)
+
+- **Goal:** Address two accumulated ADVICE items from FE-008 review: (1) add a regression-prevention test asserting `streamingText === draft.content` after a complete streaming cycle; (2) replace bare `as Record<string, unknown>` casts in `drafts.ts`'s SSE frame parser with a `isJsonObject` type-narrowing helper and add a negative-case test.
+- **Inputs:**
+  - `frontend/src/services/drafts.ts` — SSE frame parser (lines 316-374); three `as Record<string, unknown>` casts at lines 345, 351, 367
+  - `frontend/src/hooks/__tests__/useGenerateDraft.test.ts` — streaming test suite (FE-008); regression test added here
+  - `frontend/src/services/__tests__/drafts.test.ts` — service test suite; negative-case test added here
+  - `.claude/rules/local-llm-and-phi.md` §3, §4 — streaming path carries PHI; no console/storage
+- **Acceptance:**
+  - [x] `isJsonObject(value: unknown): value is Record<string, unknown>` defined in `drafts.ts`; three `as Record<string, unknown>` casts replaced with `if (!isJsonObject(parsed)) continue;` guard.
+  - [x] `services/__tests__/drafts.test.ts` — ≥1 new test: SSE frame whose `data:` line parses to a non-object (e.g., a bare number) is silently skipped; `onChunk` and `onComplete` not called.
+  - [x] `hooks/__tests__/useGenerateDraft.test.ts` — ≥1 new test: after a complete 3-chunk stream cycle (`onChunk` × 3 then `onComplete`), `result.current.streamingText === result.current.draft?.content`.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — all prior tests pass; net test count grows by ≥2.
+  - [x] G4 security-check — PASS (no new fetch, no storage writes, no console).
+- **Out-of-scope:** Refactoring SSE parser to use zod; backend ADVICE items (BE-015 already done); PHI rule §3 amendment; any new dependencies.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** PHI; changes touch the streaming-draft path which carries PHI; the changes themselves do not alter PHI handling.
+- **Gates Touched:** G1, G2, G3, G4
+- **Affected Layers:** services (drafts.ts), hooks tests (useGenerateDraft), service tests

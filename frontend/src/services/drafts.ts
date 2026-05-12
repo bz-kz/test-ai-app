@@ -246,6 +246,16 @@ export interface StreamDraftOpts {
 }
 
 /**
+ * JSON.parse の結果がプレーンオブジェクトかどうかを判定するナローイングヘルパー。
+ *
+ * `parsed as Record<string, unknown>` のベアキャストを避けるために使う。
+ * 配列・null・プリミティブはすべて false になる。
+ */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
  * SSE ストリーミングで下書きを生成する (POST /encounters/{id}/drafts/stream)。
  *
  * BE-013 の SSE フレーム形式:
@@ -340,15 +350,17 @@ export async function streamRecordDraft(
         continue;
       }
 
+      // オブジェクト以外 (数値・文字列・配列など) は不正フレームとしてスキップする
+      if (!isJsonObject(parsed)) continue;
+      const p = parsed; // isJsonObject により Record<string, unknown> に絞り込まれる
+
       if (eventType === "complete") {
         // 完了フレーム: { draft_id, confidence }
-        const p = parsed as Record<string, unknown>;
         const draftId = typeof p["draft_id"] === "string" ? p["draft_id"] : "";
         const confidence = typeof p["confidence"] === "number" ? p["confidence"] : null;
         opts.onComplete({ draftId, confidence });
       } else if (eventType === "error") {
         // エラーフレーム: { code, message }
-        const p = parsed as Record<string, unknown>;
         const code = typeof p["code"] === "string" ? p["code"] : "";
         let kind: StreamDraftErrorKind;
         switch (code) {
@@ -364,7 +376,6 @@ export async function streamRecordDraft(
         opts.onError({ kind });
       } else {
         // データチャンク: { text, done, confidence }
-        const p = parsed as Record<string, unknown>;
         const text = typeof p["text"] === "string" ? p["text"] : "";
         if (text !== "") {
           opts.onChunk(text);

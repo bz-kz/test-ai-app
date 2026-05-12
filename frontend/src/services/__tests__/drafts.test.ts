@@ -397,4 +397,26 @@ describe("streamRecordDraft", () => {
       })
     );
   });
+
+  it("FE-011 Item2: data: 行がオブジェクト以外 (数値) のフレームは静かにスキップされる", async () => {
+    // data: 行が数値 — isJsonObject が false を返すので onChunk も onComplete も呼ばれない
+    const sseData = [
+      `data: 42\n\n`,
+      `event: complete\ndata: {"draft_id":"y","confidence":null}\n\n`,
+    ];
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce(new Response(makeStreamBody(sseData), { status: 200 }));
+
+    const onChunk = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+
+    await streamRecordDraft(FAKE_ENCOUNTER_ID, "入力", { onChunk, onComplete, onError });
+
+    // 数値フレームはスキップされ、complete フレームは正常処理される
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledWith({ draftId: "y", confidence: null });
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

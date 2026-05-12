@@ -374,4 +374,39 @@ describe("useGenerateDraft — generateStream", () => {
     expect(result.current.isStreaming).toBe(false);
     expect(result.current.error).toMatch(/推論サービスが一時的に利用できません/);
   });
+
+  it("FE-011 Item1 リグレッション: ストリーム完了後 streamingText === draft.content", async () => {
+    // 3 チャンク ("hello", " ", "world") → onComplete で content === "hello world"
+    // streamingText はクリアされないため draft.content と一致しなければならない
+    const DRAFT_ID = "draft-uuid-regression";
+    mockStream.mockImplementation(
+      async (
+        _encounterId: string,
+        _input: string,
+        opts: Parameters<typeof streamRecordDraft>[2]
+      ) => {
+        opts.onChunk("hello");
+        opts.onChunk(" ");
+        opts.onChunk("world");
+        opts.onComplete({ draftId: DRAFT_ID, confidence: null });
+      }
+    );
+
+    const { result } = renderHook(() => useGenerateDraft(FAKE_ENCOUNTER_ID));
+
+    act(() => {
+      result.current.setClinicalInput("入力");
+    });
+
+    await act(async () => {
+      result.current.generateStream();
+      await Promise.resolve();
+    });
+
+    // 完了後: status success, draft が存在し、streamingText === draft.content
+    expect(result.current.status).toBe("success");
+    expect(result.current.draft).not.toBeNull();
+    expect(result.current.draft?.content).toBe("hello world");
+    expect(result.current.streamingText).toBe(result.current.draft?.content);
+  });
 });
