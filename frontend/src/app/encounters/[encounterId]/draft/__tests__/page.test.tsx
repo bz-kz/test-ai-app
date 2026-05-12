@@ -27,6 +27,9 @@ vi.mock("@/hooks/useFinalChain", () => ({
   useFinalChain: vi.fn(),
 }));
 
+// VoiceCapture molecule をモック — FE-009 の UI を page テストから分離する (FE-009)
+vi.mock("@/components/molecules/VoiceCapture", () => ({ default: () => null }));
+
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
 import { useCorrectFinal } from "@/hooks/useCorrectFinal";

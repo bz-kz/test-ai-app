@@ -22,6 +22,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
 | FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | qa     | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 ---
 
@@ -288,6 +289,42 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; clinical_input + streaming text + assembled content are PHI per .claude/rules/local-llm-and-phi.md §3.
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
 - **Affected Layers:** services (extend drafts.ts), hooks (extend useGenerateDraft), atoms (Cursor), app (page swap to stream)
+
+---
+
+## RecordButton + VoiceCapture + draft-page wiring (FE-009)
+
+- **Goal:** Add microphone-based voice input to the draft page: RecordButton atom, VoiceCapture molecule, useVoiceCapture hook, asr service, constants — all wired so the transcript appends to `clinical_input` without replacing existing text. Audio stays in memory only; never hits storage.
+- **Inputs:**
+  - frontend/SPEC.md#voice-capture — full acceptance criteria
+  - frontend/SPEC.md#voice-input-latency-ux — latency UX tiers for ASR
+  - frontend/SPEC.md#atomic-design-mapping — RecordButton (atom), VoiceCapture (molecule)
+  - SPEC.md#asr-layer-contract — backend wire contract (POST /encounters/{id}/transcribe)
+  - docs/adr/0001-voice-input-and-local-asr.md — Accepted; audio = PHI; no Web Speech API; no hosted ASR
+  - .claude/rules/local-llm-and-phi.md §1, §3, §4 — audio blob + transcript are PHI; never in console/storage
+- **Acceptance:**
+  - [ ] `src/components/atoms/RecordButton.tsx` — idle/recording/uploading states; 48×48 px; aria-pressed; aria-label JP; keyboard accessible; disabled state.
+  - [ ] `src/components/atoms/__tests__/RecordButton.test.tsx` — all visual states, onClick, disabled.
+  - [ ] `src/services/asr.ts` — `transcribeAudio(encounterId, blob, opts)` → tagged union; X-Clinician-Id; no PHI in logs.
+  - [ ] `src/services/__tests__/asr.test.ts` — each tagged-union branch with mocked fetch.
+  - [ ] `src/hooks/useVoiceCapture.ts` — status machine; start/stop/cancel; 60s auto-stop; AbortController; audio Blob in useRef only.
+  - [ ] `src/hooks/__tests__/useVoiceCapture.test.ts` — state transitions, permission denial, 60s auto-stop, cancel, success, error paths.
+  - [ ] `src/components/molecules/VoiceCapture.tsx` — composes RecordButton + elapsed counter + error region; latency UX tiers; JP error strings from constants; aria-live.
+  - [ ] `src/components/molecules/__tests__/VoiceCapture.test.tsx` — idle render, click→recording, mocked success→onTranscript, permission_denied, 503 path, 60s auto-stop.
+  - [ ] `src/lib/constants.ts` — VOICE_CAPTURE_ERRORS + AUDIO_MAX_DURATION_S + AUDIO_MIME_TYPE + AUDIO_MAX_BYTES added.
+  - [ ] `src/app/encounters/[encounterId]/draft/page.tsx` — VoiceCapture wired; onTranscript appends with leading space; disabled while finalized/editing/streaming.
+  - [ ] No FE-008 regression — all existing tests still pass.
+  - [ ] G1 `npx tsc --noEmit` — 0 errors.
+  - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [ ] G3 `npm test -- --run` — all tests pass; net count > 301.
+  - [ ] G4 security-check — no hosted-ASR SDK; no Web Speech API; no MediaRecorder outside designated files; no storage writes; no PHI in console.
+  - [ ] G5 cost-check — 60s cap enforced; latency UX tiers present; no heavy dep added.
+- **Out-of-scope:** Backend changes; audio persistence; streaming partial transcripts; voice-to-direct-SOAP; recording >60s; waveform/VU meter.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; consumes POST /encounters/{id}/transcribe ASR path.
+- **Data Sensitivity:** PHI; audio bytes + transcript are PHI; Blob in useRef only; never in console/storage/URL.
+- **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
+- **Affected Layers:** atoms (RecordButton), molecules (VoiceCapture), hooks (useVoiceCapture), services (asr), app (draft page), lib (constants)
 
 ---
 

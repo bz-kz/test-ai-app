@@ -26,7 +26,7 @@
  *     → TextArea (pre-fill) + キャンセル / 更新ボタン
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
 import { useCorrectFinal } from "@/hooks/useCorrectFinal";
@@ -45,6 +45,7 @@ import FormField from "@/components/molecules/FormField";
 import AIIndicatedText from "@/components/molecules/AIIndicatedText";
 import ConfidencePill from "@/components/molecules/ConfidencePill";
 import ChainList from "@/components/molecules/ChainList";
+import VoiceCapture from "@/components/molecules/VoiceCapture";
 import type { RecordFinal } from "@/types/recordFinal";
 
 interface DraftPageProps {
@@ -210,6 +211,16 @@ export default function DraftPage({ params }: DraftPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lifecycle.mode, currentFinal?.id]);
 
+  // 音声文字起こし結果を clinicalInput に追記する (PHI — ログに出力しない)
+  // setClinicalInput は (next: string) => void のため関数型アップデートは使えない。
+  // clinicalInput を依存に含めて最新値を参照する。
+  const appendTranscript = useCallback(
+    (text: string) => {
+      setClinicalInput(clinicalInput.length === 0 ? text : `${clinicalInput} ${text}`);
+    },
+    [clinicalInput, setClinicalInput]
+  );
+
   const isGenerating = status === "generating";
   const isButtonDisabled = clinicalInput.trim() === "" || isGenerating;
   // ≤300ms はボタン内スピナーを出さない (invisible tier)
@@ -233,6 +244,15 @@ export default function DraftPage({ params }: DraftPageProps) {
               aria-describedby={undefined}
             />
           </FormField>
+          {/* 音声入力 — 編集中 / 生成中 / ストリーミング中は無効化する
+              (確定済みモードではこのブロック自体が非表示になるため除外済み) */}
+          <div className="mt-3">
+            <VoiceCapture
+              encounterId={encounterId}
+              onTranscript={appendTranscript}
+              disabled={lifecycle.mode === "editing" || isStreaming || isGenerating}
+            />
+          </div>
         </section>
       )}
 
