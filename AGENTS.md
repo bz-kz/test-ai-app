@@ -32,6 +32,8 @@ A file's owner is the agent that may modify it. Other agents may read.
 | `.claude/agents/*.md`                            | Human only          | Agents do not self-modify their own role definitions.                            |
 | `.claude/rules/*.md`                             | Human only          | Changes require an ADR.                                                          |
 | `.claude/settings.json`, hooks                   | Human only          | Out of bounds for all agents.                                                    |
+| `/CLAUDE.md` (project root)                      | Human only          | Project-wide policy file; agents propose text, never edit (2026-05-12).          |
+| `~/.claude/CLAUDE.md` (user global)              | Human only          | User's cross-project preferences; agents propose text only (2026-05-12).         |
 | Source code, tests, `docker-compose.yml`         | Generator           | Evaluator may read and run; never edits.                                         |
 
 ## 4. Language rules
