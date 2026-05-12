@@ -295,7 +295,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 ## RecordButton + VoiceCapture + draft-page wiring (FE-009)
 
 - **Goal:** Add microphone-based voice input to the draft page: RecordButton atom, VoiceCapture molecule, useVoiceCapture hook, transcribe service, constants — all wired so the transcript appends to `clinical_input` without replacing existing text. Audio stays in memory only; never hits storage.
-- **Status:** qa (G1/G2/G3/G4/G5 green; 7 G6 deviations resolved)
+- **Status:** in-progress (fixing SPEC L113/L114 — latency UX tier text + secondary hint)
 - **Inputs:**
   - frontend/SPEC.md#voice-capture — full acceptance criteria
   - frontend/SPEC.md#voice-input-latency-ux — latency UX tiers for ASR

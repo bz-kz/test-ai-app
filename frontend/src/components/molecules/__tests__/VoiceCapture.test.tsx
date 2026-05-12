@@ -2,7 +2,13 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import VoiceCapture from "../VoiceCapture";
-import { AUDIO_MIME_TYPE, ASR_LATENCY_CANCEL_MS } from "@/lib/constants";
+import {
+  AUDIO_MIME_TYPE,
+  ASR_LATENCY_CANCEL_MS,
+  ASR_LATENCY_SPINNER_MS,
+  ASR_LATENCY_HINT_MS,
+  VOICE_CAPTURE_STATUS,
+} from "@/lib/constants";
 
 // useVoiceCapture フックをモック
 vi.mock("@/hooks/useVoiceCapture", () => ({
@@ -204,5 +210,31 @@ describe("VoiceCapture molecule", () => {
   // AUDIO_MIME_TYPE の参照が定数から来ていることを確認 (ハードコードしていない)
   it("AUDIO_MIME_TYPE が 'audio/webm;codecs=opus' であること", () => {
     expect(AUDIO_MIME_TYPE).toBe("audio/webm;codecs=opus");
+  });
+
+  // SPEC L113: 500ms–3s tier — スピナーと "文字起こし中…" が表示され、ヒントは表示されない
+  it("uploading かつ elapsedMs=600 (500ms–3s tier): '文字起こし中…' が表示され 'ローカル音声認識の応答待ち' は表示されない", () => {
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({
+        status: "uploading",
+        elapsedMs: ASR_LATENCY_SPINNER_MS + 100, // 600ms — spinner tier, not hint tier
+      })
+    );
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+    expect(screen.getByText(VOICE_CAPTURE_STATUS.transcribing)).toBeInTheDocument();
+    expect(screen.queryByText(VOICE_CAPTURE_STATUS.localAsrHint)).not.toBeInTheDocument();
+  });
+
+  // SPEC L114: 3s–10s tier — スピナー + "文字起こし中…" に加えて "ローカル音声認識の応答待ち" も表示される
+  it("uploading かつ elapsedMs=3500 (3s–10s tier): '文字起こし中…' と 'ローカル音声認識の応答待ち' が両方表示される", () => {
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({
+        status: "uploading",
+        elapsedMs: ASR_LATENCY_HINT_MS + 500, // 3500ms — hint tier
+      })
+    );
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+    expect(screen.getByText(VOICE_CAPTURE_STATUS.transcribing)).toBeInTheDocument();
+    expect(screen.getByText(VOICE_CAPTURE_STATUS.localAsrHint)).toBeInTheDocument();
   });
 });

@@ -43,3 +43,14 @@ export const VOICE_CAPTURE_ERRORS = {
 export const ASR_LATENCY_SPINNER_MS = 500;
 export const ASR_LATENCY_HINT_MS = 3000;
 export const ASR_LATENCY_CANCEL_MS = 10000;
+
+/**
+ * 音声キャプチャ状態表示文言 — frontend/SPEC.md#voice-input-latency-ux L113–L114
+ * PHI を含まない固定文言のみ。
+ */
+export const VOICE_CAPTURE_STATUS = {
+  /** 500ms–3s tier: スピナーと共に表示 (SPEC L113) */
+  transcribing: "文字起こし中…",
+  /** 3s–10s tier: ローカル ASR の応答待ちヒント (SPEC L114) */
+  localAsrHint: "ローカル音声認識の応答待ち",
+} as const;

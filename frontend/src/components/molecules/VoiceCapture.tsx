@@ -19,6 +19,7 @@ import {
   ASR_LATENCY_HINT_MS,
   ASR_LATENCY_CANCEL_MS,
   VOICE_CAPTURE_ERRORS,
+  VOICE_CAPTURE_STATUS,
   AUDIO_MAX_DURATION_S,
 } from "@/lib/constants";
 import type { RecordButtonState } from "@/components/atoms/RecordButton";
@@ -135,9 +136,12 @@ export function VoiceCapture({ encounterId, onTranscript, disabled = false }: Vo
                 {/* prefers-reduced-motion: スピナーは motion-safe クラスで制御、静的省略記号に切り替え */}
                 <span className="motion-safe:hidden">…</span>
                 <SmallSpinner />
+                {/* 500ms–3s tier: スピナーと文字起こし中テキスト (SPEC L113) */}
+                <span>{VOICE_CAPTURE_STATUS.transcribing}</span>
               </>
             )}
-            {elapsedMs >= ASR_LATENCY_HINT_MS && <span>音声を文字起こし中…</span>}
+            {/* 3s–10s tier: ローカル ASR 応答待ちヒントを追加 (SPEC L114) */}
+            {elapsedMs >= ASR_LATENCY_HINT_MS && <span>{VOICE_CAPTURE_STATUS.localAsrHint}</span>}
             {elapsedMs >= ASR_LATENCY_CANCEL_MS && (
               <button type="button" className="ml-1 text-sm text-error underline" onClick={cancel}>
                 キャンセル
