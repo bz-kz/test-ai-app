@@ -11,21 +11,21 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## Task Index
 
-| ID      | Title                                                    | Status      | Gates Touched              | Owner     |
-| ------- | -------------------------------------------------------- | ----------- | -------------------------- | --------- |
-| FE-001  | Frontend foundation + Button atom                        | done        | G1, G2, G3, G6, G7         | Generator |
-| FE-002  | Patient Search by MRN                                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-003  | Record Draft generation UI                               | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-004  | Draft edit and finalize UI                               | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-005  | Final correction UI + FE-004 fixes                       | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-006  | Auto-load draft + correction chain UI                    | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done        | G0, G1, G2, G3, G4, G6, G7 | Generator |
-| FE-008  | Streaming draft UI consumer                              | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done        | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-010  | Draft page auto-sync to finalized state                  | done        | G1, G2, G3, G4, G6, G7     | Generator |
-| FE-011  | Hardening ADVICE bundle (frontend)                       | done        | G1, G2, G3, G4             | Generator |
-| FE-012  | Root landing page UI                                     | in-progress | G1, G2, G3, G6, G7         | Generator |
+| ID      | Title                                                    | Status | Gates Touched              | Owner     |
+| ------- | -------------------------------------------------------- | ------ | -------------------------- | --------- |
+| FE-001  | Frontend foundation + Button atom                        | done   | G1, G2, G3, G6, G7         | Generator |
+| FE-002  | Patient Search by MRN                                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-003  | Record Draft generation UI                               | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-004  | Draft edit and finalize UI                               | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-005  | Final correction UI + FE-004 fixes                       | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-006  | Auto-load draft + correction chain UI                    | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
+| FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-010  | Draft page auto-sync to finalized state                  | done   | G1, G2, G3, G4, G6, G7     | Generator |
+| FE-011  | Hardening ADVICE bundle (frontend)                       | done   | G1, G2, G3, G4             | Generator |
+| FE-012  | Root landing page UI                                     | qa     | G1, G2, G3, G6, G7         | Generator |
 
 ---
 
@@ -409,3 +409,36 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Data Sensitivity:** PHI; changes touch the streaming-draft path which carries PHI; the changes themselves do not alter PHI handling.
 - **Gates Touched:** G1, G2, G3, G4
 - **Affected Layers:** services (drafts.ts), hooks tests (useGenerateDraft), service tests
+
+---
+
+## Root landing page UI (FE-012)
+
+- **Goal:** Replace the FE-001 scaffold placeholder at `/` with a clinician-friendly static server-component landing page that surfaces the primary entry point (`/patients`) and gives a brief feature tour.
+- **Inputs:**
+  - frontend/SPEC.md#frontend-mission — overall UI mission
+  - DESIGN.md — visual tokens (text-navy, text-slate, text-sage, font-display, max-w-2xl shell)
+  - frontend/src/components/atoms/Button.tsx — Button atom (variant/size props)
+  - frontend/src/app/patients/page.tsx — page shell convention (`<main className="mx-auto max-w-2xl px-4 py-8">`)
+- **Acceptance:**
+  - [x] `frontend/src/app/page.tsx` replaced; `<main className="mx-auto max-w-2xl px-4 py-8">` shell.
+  - [x] `<h1>` "AI カルテ生成システム" — `font-display text-3xl font-bold text-navy`.
+  - [x] Tagline paragraph mentioning "ローカル" + PHI-safety promise.
+  - [x] Feature list — 4 `<li>` items with `<ul role="list" aria-label="主な機能">`.
+  - [x] Primary CTA: `<Link href="/patients"><Button variant="primary" size="lg">患者検索を開く</Button></Link>`.
+  - [x] Footer note: local-only PoC one-liner.
+  - [x] No `"use client"` directive (server component).
+  - [x] No raw `<a>` anchors — Next.js `<Link>` used for internal nav.
+  - [x] No new dependencies introduced.
+  - [x] No `--spacing-Nxl` tokens — theme-tokens guard test stays green.
+  - [x] Accessible: single `<h1>`, `<main>` landmark, list semantics, `aria-label` on feature list.
+  - [x] `frontend/src/app/__tests__/page.test.tsx` — 5 unit tests: h1 text, tagline, CTA href, list item count, single-h1 hierarchy.
+  - [x] G1 `npx tsc --noEmit` — 0 errors.
+  - [x] G2 `npx eslint . && npx prettier --check .` — clean.
+  - [x] G3 `npm test -- --run` — 374 tests pass (was 369; +5 new).
+- **Out-of-scope:** Dynamic content, auth/login UI, hero images, routing changes, localization.
+- **Open-questions:** _(none)_
+- **Inference Impact:** no
+- **Data Sensitivity:** none
+- **Gates Touched:** G1, G2, G3, G6, G7
+- **Affected Layers:** app (page.tsx), tests
