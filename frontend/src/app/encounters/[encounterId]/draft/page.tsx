@@ -31,6 +31,7 @@ import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
 import { useCorrectFinal } from "@/hooks/useCorrectFinal";
 import { useEncounterDrafts } from "@/hooks/useEncounterDrafts";
+import { useEncounterFinals } from "@/hooks/useEncounterFinals";
 import { useFinalChain } from "@/hooks/useFinalChain";
 import {
   LATENCY_SPINNER_MS,
@@ -162,8 +163,21 @@ export default function DraftPage({ params }: DraftPageProps) {
     elapsedMs,
   } = gen;
 
+  // FE-010: ページマウント時に既存の確定カルテを並行して取得する
+  const encounterFinals = useEncounterFinals();
+
+  useEffect(() => {
+    encounterFinals.load(encounterId);
+    // encounterId が変わったときのみ再実行する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encounterId]);
+
   // onDraftUpdated で saveEdit 成功時に draft を即座に更新する (FE-005 fix #2)
-  const lifecycle = useDraftLifecycle(draft, { onDraftUpdated: setDraft });
+  // initialFinal: 既存の確定カルテがあればそれを初期値として渡す (FE-010)
+  const lifecycle = useDraftLifecycle(draft, {
+    onDraftUpdated: setDraft,
+    initialFinal: encounterFinals.latest,
+  });
 
   // currentFinal: lifecycle.approve() 成功後の確定カルテ、または訂正後の最新版
   const [currentFinal, setCurrentFinal] = useState<RecordFinal | null>(null);

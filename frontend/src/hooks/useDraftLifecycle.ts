@@ -20,7 +20,7 @@
  */
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { editRecordDraft, finalizeRecordDraft } from "@/services/drafts";
 import type { RecordDraft } from "@/types/recordDraft";
 import type { RecordFinal } from "@/types/recordFinal";
@@ -31,6 +31,13 @@ export type DraftLifecycleStatus = "idle" | "saving" | "finalizing" | "error";
 export interface UseDraftLifecycleOptions {
   /** saveEdit 成功時に呼ばれるコールバック。更新後の RecordDraft を受け取る。 */
   onDraftUpdated?: (next: RecordDraft) => void;
+  /**
+   * ページマウント時に既存の確定カルテが存在する場合に渡す初期値。
+   * 非 null のとき、初回レンダーで mode を "finalized" に、final をその値に初期化する。
+   * ラッチ: 一度初期化したあとは initialFinal が変化しても再シードしない。
+   * これにより、他タブでの訂正でページが再レンダーされても mode が上書きされない。
+   */
+  initialFinal?: RecordFinal | null;
 }
 
 export interface UseDraftLifecycleReturn {
@@ -76,7 +83,7 @@ function toErrorMessage(kind: string): string {
  * useDraftLifecycle フック。
  *
  * @param draft        現在の下書き (useGenerateDraft から渡す; null のときは操作不可)
- * @param opts         オプション (onDraftUpdated など)
+ * @param opts         オプション (onDraftUpdated, initialFinal など)
  */
 export function useDraftLifecycle(
   draft: RecordDraft | null,
@@ -87,6 +94,20 @@ export function useDraftLifecycle(
   const [final, setFinal] = useState<RecordFinal | null>(null);
   const [status, setStatus] = useState<DraftLifecycleStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // ラッチ: initialFinal による一度きりのシードを保証する。
+  // ページマウント後に encounterFinals フェッチが完了すると initialFinal が
+  // null → RecordFinal に変化する。この遷移を一度だけ捉えて mode と final を
+  // 設定し、以降の変化 (他タブでの訂正など) では再シードしない。
+  const seededRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    // 既にシード済み、または initialFinal がまだ null なら何もしない
+    if (seededRef.current || opts?.initialFinal == null) return;
+    seededRef.current = true;
+    setMode("finalized");
+    setFinal(opts.initialFinal);
+  }, [opts?.initialFinal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 進行中リクエストを管理する AbortController — 再クリック時に前のリクエストをキャンセルする
   const abortRef = useRef<AbortController | null>(null);

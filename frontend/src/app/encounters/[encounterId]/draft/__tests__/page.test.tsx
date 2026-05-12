@@ -30,17 +30,24 @@ vi.mock("@/hooks/useFinalChain", () => ({
 // VoiceCapture molecule をモック — FE-009 の UI を page テストから分離する (FE-009)
 vi.mock("@/components/molecules/VoiceCapture", () => ({ default: () => null }));
 
+// useEncounterFinals フックをモック (FE-010)
+vi.mock("@/hooks/useEncounterFinals", () => ({
+  useEncounterFinals: vi.fn(),
+}));
+
 import { useGenerateDraft } from "@/hooks/useGenerateDraft";
 import { useDraftLifecycle } from "@/hooks/useDraftLifecycle";
 import { useCorrectFinal } from "@/hooks/useCorrectFinal";
 import { useEncounterDrafts } from "@/hooks/useEncounterDrafts";
 import { useFinalChain } from "@/hooks/useFinalChain";
+import { useEncounterFinals } from "@/hooks/useEncounterFinals";
 
 const mockUseGenerateDraft = vi.mocked(useGenerateDraft);
 const mockUseDraftLifecycle = vi.mocked(useDraftLifecycle);
 const mockUseCorrectFinal = vi.mocked(useCorrectFinal);
 const mockUseEncounterDrafts = vi.mocked(useEncounterDrafts);
 const mockUseFinalChain = vi.mocked(useFinalChain);
+const mockUseEncounterFinals = vi.mocked(useEncounterFinals);
 
 const FAKE_ENCOUNTER_ID = "00000000-0000-0000-0000-000000000010";
 const FAKE_DRAFT_ID = "00000000-0000-0000-0000-000000000020";
@@ -157,6 +164,18 @@ function makeFinalChainReturn(overrides: Partial<ReturnType<typeof useFinalChain
   };
 }
 
+/** テスト用のデフォルト useEncounterFinals 戻り値 (FE-010) */
+function makeEncounterFinalsReturn(overrides: Partial<ReturnType<typeof useEncounterFinals>>) {
+  return {
+    status: "idle" as const,
+    finals: [],
+    latest: null,
+    error: null,
+    load: vi.fn(),
+    ...overrides,
+  };
+}
+
 /** Next.js 15 の async params を模倣する */
 function makeParams(encounterId: string): Promise<{ encounterId: string }> {
   return Promise.resolve({ encounterId });
@@ -171,13 +190,15 @@ async function renderPage(
   lifecycleOverrides: Partial<ReturnType<typeof useDraftLifecycle>> = {},
   correctOverrides: Partial<ReturnType<typeof useCorrectFinal>> = {},
   encounterDraftsOverrides: Partial<ReturnType<typeof useEncounterDrafts>> = {},
-  finalChainOverrides: Partial<ReturnType<typeof useFinalChain>> = {}
+  finalChainOverrides: Partial<ReturnType<typeof useFinalChain>> = {},
+  encounterFinalsOverrides: Partial<ReturnType<typeof useEncounterFinals>> = {}
 ) {
   mockUseGenerateDraft.mockReturnValue(makeGenerateReturn(generateOverrides));
   mockUseDraftLifecycle.mockReturnValue(makeLifecycleReturn(lifecycleOverrides));
   mockUseCorrectFinal.mockReturnValue(makeCorrectReturn(correctOverrides));
   mockUseEncounterDrafts.mockReturnValue(makeEncounterDraftsReturn(encounterDraftsOverrides));
   mockUseFinalChain.mockReturnValue(makeFinalChainReturn(finalChainOverrides));
+  mockUseEncounterFinals.mockReturnValue(makeEncounterFinalsReturn(encounterFinalsOverrides));
   await act(async () => {
     render(<DraftPage params={makeParams(FAKE_ENCOUNTER_ID)} />);
   });
@@ -748,5 +769,116 @@ describe("DraftPage (FE-008: streaming generate)", () => {
     const regenButton = screen.getByRole("button", { name: "再生成" });
     regenButton.click();
     expect(mockGenerateStream).toHaveBeenCalledOnce();
+  });
+});
+
+// ============================================================
+// FE-010 の追加テスト
+// ============================================================
+
+describe("DraftPage (FE-010: finalized auto-sync on mount)", () => {
+  it("(a) finals + drafts 存在: 確定済みUIが描画され入力フォームは非表示・setDraft は未呼び出し", async () => {
+    // useEncounterFinals が latest=FAKE_FINAL を返す → lifecycle は初期シードで finalized
+    const mockSetDraft = vi.fn();
+    await renderPage(
+      // generate: draft があっても setDraft は呼ばれない
+      { status: "success", draft: FAKE_DRAFT, setDraft: mockSetDraft },
+      // lifecycle はすでに finalized (initialFinal シード済みを再現)
+      { mode: "finalized", final: FAKE_FINAL },
+      // correction は view モード
+      { mode: "view" },
+      // encounterDrafts は loaded
+      { status: "loaded", latest: FAKE_DRAFT, drafts: [FAKE_DRAFT] },
+      // finalChain は idle
+      {},
+      // encounterFinals は loaded — latest が存在する
+      { status: "loaded", finals: [FAKE_FINAL], latest: FAKE_FINAL }
+    );
+
+    // 確定済みバッジが表示される
+    expect(screen.getByRole("status", { name: "確定済みカルテ" })).toBeInTheDocument();
+    // 確定カルテ本文が article で表示される
+    expect(screen.getByRole("article", { name: "確定カルテ" })).toBeInTheDocument();
+    // 訂正ボタンが表示される
+    expect(screen.getByRole("button", { name: "訂正" })).toBeInTheDocument();
+    // 入力フォームは非表示 (finalized モードで隠される)
+    expect(
+      screen.queryByRole("textbox", { name: "臨床入力 (Subjective/Objective)" })
+    ).not.toBeInTheDocument();
+    // draft があっても setDraft は呼ばれない (finals が先にシードするため FE-006 の auto-seed 条件が成立しない)
+    expect(mockSetDraft).not.toHaveBeenCalled();
+  });
+
+  it("(b) finals も drafts も存在しない: 入力フォームが描画され確定済みUIは非表示・ローディングなし", async () => {
+    await renderPage(
+      // generate: idle + draft=null
+      { status: "idle", draft: null },
+      // lifecycle: view モード (finals なし)
+      { mode: "view" },
+      {},
+      // encounterDrafts: loaded で空
+      { status: "loaded", latest: null, drafts: [] },
+      {},
+      // encounterFinals: loaded で空
+      { status: "loaded", finals: [], latest: null }
+    );
+
+    // 案内テキストが表示される
+    expect(
+      screen.getByText("臨床入力を記入して『下書きを生成』を押してください")
+    ).toBeInTheDocument();
+    // 確定済みバッジは表示されない
+    expect(screen.queryByRole("status", { name: "確定済みカルテ" })).not.toBeInTheDocument();
+    // ローディングインジケーターは表示されない
+    expect(screen.queryByText("下書きを確認しています…")).not.toBeInTheDocument();
+  });
+
+  it("(c) drafts のみ存在 (finals なし): FE-006 の auto-seed パスが機能し setDraft が呼ばれる", async () => {
+    const mockSetDraft = vi.fn();
+    await renderPage(
+      // draft=null で開始; useEffect が setDraft を呼ぶ
+      { status: "idle", draft: null, setDraft: mockSetDraft },
+      // lifecycle: view (initialFinal=null のため finalized にならない)
+      { mode: "view" },
+      {},
+      // encounterDrafts: loaded で latest=FAKE_DRAFT
+      { status: "loaded", latest: FAKE_DRAFT, drafts: [FAKE_DRAFT] },
+      {},
+      // encounterFinals: loaded だが空 (確定カルテなし)
+      { status: "loaded", finals: [], latest: null }
+    );
+
+    // FE-006 の auto-seed: setDraft が FAKE_DRAFT で呼ばれる
+    expect(mockSetDraft).toHaveBeenCalledWith(FAKE_DRAFT);
+    // 確定済みUIは表示されない
+    expect(screen.queryByRole("status", { name: "確定済みカルテ" })).not.toBeInTheDocument();
+  });
+
+  it("(d) finals フェッチ失敗 (status=error): サイレントフォールバックして入力フォームが表示される", async () => {
+    await renderPage(
+      { status: "idle", draft: null },
+      // lifecycle: view (error 時は initialFinal=null のため finalized にならない)
+      { mode: "view" },
+      {},
+      // encounterDrafts: loaded で空
+      { status: "loaded", latest: null, drafts: [] },
+      {},
+      // encounterFinals: error
+      {
+        status: "error",
+        finals: [],
+        latest: null,
+        error: "確定カルテの確認中にエラーが発生しました。",
+      }
+    );
+
+    // 入力フォームが表示される (フォールバック)
+    expect(
+      screen.getByText("臨床入力を記入して『下書きを生成』を押してください")
+    ).toBeInTheDocument();
+    // 確定済みUIは表示されない
+    expect(screen.queryByRole("status", { name: "確定済みカルテ" })).not.toBeInTheDocument();
+    // finals エラーは生成エラーとは別 — role=alert は生成エラー由来のみ
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

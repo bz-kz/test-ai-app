@@ -1,6 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useDraftLifecycle } from "../useDraftLifecycle";
+import type { RecordFinal } from "@/types/recordFinal";
 
 // サービス層をモック — 実際の fetch は呼び出さない
 vi.mock("@/services/drafts", () => ({
@@ -27,7 +28,7 @@ const FAKE_DRAFT = {
   updated_at: "2024-01-01T00:00:00Z",
 };
 
-const FAKE_FINAL = {
+const FAKE_FINAL: RecordFinal = {
   id: FAKE_FINAL_ID,
   encounter_id: FAKE_ENCOUNTER_ID,
   content: "S: 頭痛。\nO: 正常。",
@@ -337,6 +338,62 @@ describe("useDraftLifecycle", () => {
 
       expect(result.current.mode).toBe("view");
       expect(result.current.status).toBe("idle");
+    });
+  });
+
+  // ============================================================
+  // FE-010: initialFinal オプションのテスト (ラッチ挙動)
+  // ============================================================
+
+  describe("initialFinal オプション (FE-010)", () => {
+    it("(i) initialFinal が非 null のとき、useEffect 完了後に mode=finalized かつ final がその値になる", async () => {
+      const { result } = renderHook(() =>
+        useDraftLifecycle(FAKE_DRAFT, { initialFinal: FAKE_FINAL })
+      );
+      // useEffect が同期的に flush されるまで待つ
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.mode).toBe("finalized");
+      expect(result.current.final).toEqual(FAKE_FINAL);
+    });
+
+    it("(ii) initialFinal が null のとき、デフォルトの mode=view かつ final=null が保たれる", async () => {
+      const { result } = renderHook(() => useDraftLifecycle(FAKE_DRAFT, { initialFinal: null }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.mode).toBe("view");
+      expect(result.current.final).toBeNull();
+    });
+
+    it("(iii) ラッチ: 一度シード済みの後 initialFinal が変化しても mode は再シードされない", async () => {
+      // 初回レンダーは initialFinal=FAKE_FINAL でシード → mode=finalized
+      const FAKE_FINAL_2 = {
+        ...FAKE_FINAL,
+        id: "00000000-0000-0000-0000-000000000099",
+        predecessor_id: FAKE_FINAL_ID,
+      };
+      let initialFinal: typeof FAKE_FINAL | null = FAKE_FINAL;
+      const { result, rerender } = renderHook(() =>
+        useDraftLifecycle(FAKE_DRAFT, { initialFinal })
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.mode).toBe("finalized");
+      expect(result.current.final).toEqual(FAKE_FINAL);
+
+      // initialFinal を別の RecordFinal に変更して再レンダー — ラッチにより再シードしない
+      initialFinal = FAKE_FINAL_2;
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // seededRef が true のため final は上書きされない
+      expect(result.current.mode).toBe("finalized");
+      expect(result.current.final).toEqual(FAKE_FINAL);
     });
   });
 });
