@@ -63,6 +63,11 @@ grep -RnE 'logger\.(info|warning|error)\(|print\(' backend/app | grep -Ei 'patie
 # Probe 10 — Frontend PHI storage
 grep -RnE '\b(localStorage|sessionStorage|indexedDB)\b' frontend/src
 
+# Probe 10b — PHI in React state (ADR-0004): PHI buffers must live in useRef, not useState.
+# Audio blobs, partial transcripts, chunk accumulation, SSE draft buffers are all PHI.
+# Inspect each hit manually — flag any useState holding audio/transcript/chunk content.
+grep -RnE 'useState[<(][^)>]*[Pp]artial|useState[<(][^)>]*[Tt]ranscript|useState[<(][^)>]*[Cc]hunk[A-Z]|useState[<(][^)>]*[Aa]udio' frontend/src/hooks frontend/src/components 2>/dev/null
+
 # Probe 11 — PR-body / PR-title PHI scan (run before opening a PR; ADR-0005)
 # If `gh` is installed AND the PR is already drafted:
 #   gh pr view --json title,body --jq '.title, .body'
