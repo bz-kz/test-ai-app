@@ -9,6 +9,9 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      # ADR-0003: ストリーミング ASR フラグ。デフォルト false — FE-009 の動作を維持する。
+      # "true" に変更すると BE-017 のストリーミングエンドポイントを使用する。
+      - NEXT_PUBLIC_ASR_STREAMING_ENABLED=false
     depends_on:
       backend:
         condition: service_healthy

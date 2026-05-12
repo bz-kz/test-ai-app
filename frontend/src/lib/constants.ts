@@ -54,3 +54,9 @@ export const VOICE_CAPTURE_STATUS = {
   /** 3s–10s tier: ローカル ASR の応答待ちヒント (SPEC L114) */
   localAsrHint: "ローカル音声認識の応答待ち",
 } as const;
+
+/** ADR-0003: ストリーミング ASR 機能フラグ。デフォルト false → FE-009 の動作を維持する。 */
+export const ASR_STREAMING_ENABLED = process.env.NEXT_PUBLIC_ASR_STREAMING_ENABLED === "true";
+
+/** ADR-0003 ストリーミング: 最初のチャンク可視フィードバック目標 (ms) */
+export const ASR_STREAM_FIRST_CHUNK_MS = 25000;

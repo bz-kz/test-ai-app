@@ -26,6 +26,7 @@ function makeHookReturn(overrides: Partial<ReturnType<typeof useVoiceCapture>> =
     transcript: "",
     error: null,
     autoStopped: false,
+    streaming: null,
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
     cancel: vi.fn(),
@@ -204,7 +205,9 @@ describe("VoiceCapture molecule", () => {
       makeHookReturn({ status: "uploading", elapsedMs: 0, autoStopped: false })
     );
     rerender(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    // autoStopped=false のとき、toast テキストが表示されないことを確認する
+    // (aria-live ラッパー自体は常に存在するため role="status" での不在チェックは使えない)
+    expect(screen.queryByText("録音は60秒で停止しました")).not.toBeInTheDocument();
   });
 
   // AUDIO_MIME_TYPE の参照が定数から来ていることを確認 (ハードコードしていない)
@@ -236,5 +239,87 @@ describe("VoiceCapture molecule", () => {
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
     expect(screen.getByText(VOICE_CAPTURE_STATUS.transcribing)).toBeInTheDocument();
     expect(screen.getByText(VOICE_CAPTURE_STATUS.localAsrHint)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ストリーミング UI テスト (FE-013)
+// ---------------------------------------------------------------------------
+
+describe("VoiceCapture molecule — ストリーミング UI (FE-013)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("(a) streaming !== null: チャンク進捗ラベルが aria-live リージョンに表示される", () => {
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({
+        status: "uploading",
+        elapsedMs: 5000,
+        streaming: { chunkIndex: 1, chunkCount: 3, partialText: "部分テキスト" },
+      })
+    );
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+
+    // チャンク進捗ラベル: "文字起こし中… (チャンク 2 / 3)"
+    const liveRegion = screen.getByRole("status");
+    expect(liveRegion).toHaveTextContent("文字起こし中…");
+    expect(liveRegion).toHaveTextContent("チャンク 2 / 3");
+  });
+
+  it("(b) streaming !== null: <pre> ブロックに部分トランスクリプトが視覚表示される (aria-hidden)", () => {
+    const partialText = "部分テキストサンプル";
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({
+        status: "uploading",
+        elapsedMs: 5000,
+        streaming: { chunkIndex: 0, chunkCount: 3, partialText },
+      })
+    );
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+
+    // <pre> は aria-hidden なので getByRole では取得できない — querySelector で確認する
+    const pre = document.querySelector("pre[aria-hidden='true']");
+    expect(pre).not.toBeNull();
+    expect(pre?.textContent).toBe(partialText);
+  });
+
+  it("(c) streaming 中にキャンセルボタンをクリックすると cancel() が呼ばれる (チャンク破棄)", async () => {
+    const user = userEvent.setup();
+    const hookReturn = makeHookReturn({
+      status: "uploading",
+      elapsedMs: ASR_LATENCY_CANCEL_MS + 100,
+      streaming: { chunkIndex: 0, chunkCount: 3, partialText: "部分" },
+    });
+    mockUseVoiceCapture.mockReturnValue(hookReturn);
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "キャンセル" }));
+    expect(hookReturn.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("(d) onComplete 後 status=success → onTranscript が fullText で一度だけ呼ばれる", async () => {
+    const onTranscript = vi.fn();
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({ status: "success", transcript: "完全なテキスト", streaming: null })
+    );
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={onTranscript} />);
+    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith("完全なテキスト"));
+    expect(onTranscript).toHaveBeenCalledTimes(1);
+  });
+
+  it("(e) streaming=null (チャンク未着) かつ uploading: 非ストリーミング UI (スピナー) が表示される", () => {
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({
+        status: "uploading",
+        elapsedMs: ASR_LATENCY_SPINNER_MS + 100,
+        streaming: null,
+      })
+    );
+    render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+    // <pre> は表示されない
+    expect(document.querySelector("pre[aria-hidden='true']")).toBeNull();
+    // スピナー tier の "文字起こし中…" は表示される
+    expect(screen.getByText(VOICE_CAPTURE_STATUS.transcribing)).toBeInTheDocument();
   });
 });
