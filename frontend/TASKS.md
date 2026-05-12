@@ -22,7 +22,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 | FE-007  | Navigation pages (Patient detail + Encounter detail)     | done   | G1, G2, G3, G4, G6, G7     | Generator |
 | FE-007b | Navigation pages — detail pages + helper (FE-007 part 2) | done   | G0, G1, G2, G3, G4, G6, G7 | Generator |
 | FE-008  | Streaming draft UI consumer                              | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
-| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | qa     | G1, G2, G3, G4, G5, G6, G7 | Generator |
+| FE-009  | RecordButton + VoiceCapture + draft-page wiring          | done   | G1, G2, G3, G4, G5, G6, G7 | Generator |
 
 ---
 
