@@ -4,32 +4,47 @@
 - LocalASRClient          : プロトコル（型注釈・isinstance チェック用）
 - WhisperCppLocalASRClient: 本番用具体実装
 - AudioPayload            : transcribe() に渡す音声データ型
+- TranscribeChunk         : stream_transcribe() が yield するチャンク型
 - TranscribeParams        : transcribe() パラメータ
 - TranscribeResponse      : transcribe() の戻り値
 - ASRError                : ASR 呼び出し失敗時の例外
 - ASR_BASE_URL            : 設定値
 - ASR_MODEL               : 設定値
 - ASR_TIMEOUT_S           : 設定値
+- ASR_STREAM_CHUNK_SECONDS      : ストリーミング設定値
+- ASR_STREAM_TOTAL_TIMEOUT_S    : ストリーミング設定値
+- ASR_STREAM_FIRST_CHUNK_LATENCY_S : ストリーミング設定値
 
 FakeLocalASRClient はテストコードのみ直接インポートすること。
 """
 
 from .client import LocalASRClient
-from .config import ASR_BASE_URL, ASR_MODEL, ASR_TIMEOUT_S
+from .config import (
+    ASR_BASE_URL,
+    ASR_MODEL,
+    ASR_STREAM_CHUNK_SECONDS,
+    ASR_STREAM_FIRST_CHUNK_LATENCY_S,
+    ASR_STREAM_TOTAL_TIMEOUT_S,
+    ASR_TIMEOUT_S,
+)
 from .errors import ASRError
-from .types import AudioPayload, TranscribeParams, TranscribeResponse
+from .types import AudioPayload, TranscribeChunk, TranscribeParams, TranscribeResponse
 from .whisper_cpp_client import WhisperCppLocalASRClient
 
 __all__ = [
     "LocalASRClient",
     "WhisperCppLocalASRClient",
     "AudioPayload",
+    "TranscribeChunk",
     "TranscribeParams",
     "TranscribeResponse",
     "ASRError",
     "ASR_BASE_URL",
     "ASR_MODEL",
     "ASR_TIMEOUT_S",
+    "ASR_STREAM_CHUNK_SECONDS",
+    "ASR_STREAM_TOTAL_TIMEOUT_S",
+    "ASR_STREAM_FIRST_CHUNK_LATENCY_S",
     "make_asr_client",
 ]
 

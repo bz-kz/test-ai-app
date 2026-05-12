@@ -7,7 +7,13 @@ from dataclasses import dataclass
 # mask_phi はドメイン層で定義された純粋関数。
 from app.domain.phi import mask_phi
 
-__all__ = ["AudioPayload", "TranscribeParams", "TranscribeResponse", "mask_phi"]
+__all__ = [
+    "AudioPayload",
+    "TranscribeChunk",
+    "TranscribeParams",
+    "TranscribeResponse",
+    "mask_phi",
+]
 
 
 @dataclass(frozen=True)
@@ -38,3 +44,20 @@ class TranscribeResponse:
     text: str
     # ASR バックエンドが duration を返す場合のみ付与される
     duration_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class TranscribeChunk:
+    """stream_transcribe() が yield する単一チャンク。
+
+    text は PHI であるため、ログに書く際は mask_phi() を使うこと。
+    done=True のチャンクの text には全チャンクを結合した完全トランスクリプトが入る。
+    done=False のチャンクの text にはそのチャンク分のトランスクリプトのみが入る。
+
+    chunk_count=-1 は total が未確定であることを示す (実装が使う場合に限る)。
+    """
+
+    text: str
+    chunk_index: int
+    chunk_count: int
+    done: bool

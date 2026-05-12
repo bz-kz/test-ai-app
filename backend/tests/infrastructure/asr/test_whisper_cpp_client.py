@@ -5,18 +5,25 @@ BE-016: _transcode_to_wav の単体テストも含む。
   - エラー系: 非ゼロ終了コード → ASRError
   - WAV ショートサーキット: content_type が audio/wav の場合はトランスコードしない
   - 空テキストゲーティング: {"text": ""} → ASRError
+
+BE-017: _slice_wav_to_chunks および stream_transcribe の単体テストを追加。
+  - _slice_wav_to_chunks: チャンク数・バイト整合・最終チャンク短縮・非WAVヘッダーエラー
+  - stream_transcribe: 正常系チャンク列・空テキストゲーティング・mid-stream エラー
 """
 
 from __future__ import annotations
 
+import io
+import wave
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.infrastructure.asr.errors import ASRError
-from app.infrastructure.asr.types import AudioPayload, TranscribeParams
+from app.infrastructure.asr.types import AudioPayload, TranscribeChunk, TranscribeParams
 from app.infrastructure.asr.whisper_cpp_client import (
     WhisperCppLocalASRClient,
+    _slice_wav_to_chunks,
     _transcode_to_wav,
 )
 
@@ -53,6 +60,24 @@ def _make_async_client_mock(response: MagicMock) -> MagicMock:
 def _stub_transcode(return_bytes: bytes = b"fake-wav") -> AsyncMock:
     """_transcode_to_wav を既知の WAV バイト列を返すスタブに差し替える。"""
     return AsyncMock(return_value=return_bytes)
+
+
+def _make_wav(
+    duration_s: float,
+    framerate: int = 16000,
+    n_channels: int = 1,
+    sampwidth: int = 2,
+) -> bytes:
+    """指定秒数の無音 WAV バイト列を生成する (テスト専用)。"""
+    n_frames = int(duration_s * framerate)
+    pcm = bytes(n_frames * n_channels * sampwidth)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(n_channels)
+        w.setsampwidth(sampwidth)
+        w.setframerate(framerate)
+        w.writeframes(pcm)
+    return buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +151,101 @@ async def test_transcode_ffmpeg_not_found_raises_asr_error() -> None:
         await _transcode_to_wav(b"audio", "audio/webm")
 
     assert "ffmpeg binary not found" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# _slice_wav_to_chunks 単体テスト (BE-017)
+# ---------------------------------------------------------------------------
+
+
+def test_slice_wav_60s_into_6_chunks_at_10s() -> None:
+    """60s WAV を chunk_seconds=10 で分割すると 6 チャンクになる。"""
+    wav = _make_wav(60.0)
+    chunks = _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert len(chunks) == 6
+
+
+def test_slice_wav_25s_into_3_chunks() -> None:
+    """25s WAV を chunk_seconds=10 で分割すると 3 チャンク (10/10/5) になる。"""
+    wav = _make_wav(25.0)
+    chunks = _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert len(chunks) == 3
+
+
+def test_slice_wav_5s_into_1_chunk() -> None:
+    """5s WAV を chunk_seconds=10 で分割すると 1 チャンクになる。"""
+    wav = _make_wav(5.0)
+    chunks = _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert len(chunks) == 1
+
+
+def test_slice_wav_chunks_have_valid_wav_header() -> None:
+    """各チャンクが有効な RIFF WAV ヘッダーを持つ。"""
+    wav = _make_wav(30.0)
+    chunks = _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert len(chunks) == 3
+    for chunk in chunks:
+        assert chunk[:4] == b"RIFF"
+        assert chunk[8:12] == b"WAVE"
+
+
+def test_slice_wav_chunks_readable_as_wav() -> None:
+    """各チャンクを wave.open で読み込めることを確認する。"""
+    wav = _make_wav(30.0)
+    chunks = _slice_wav_to_chunks(wav, chunk_seconds=10)
+    for chunk in chunks:
+        with wave.open(io.BytesIO(chunk), "rb") as w:
+            assert w.getframerate() == 16000
+            assert w.getnchannels() == 1
+            assert w.getsampwidth() == 2
+
+
+def test_slice_wav_total_frames_preserved() -> None:
+    """分割後のフレーム総数が元の WAV と一致する。"""
+    wav = _make_wav(25.0)
+    chunks = _slice_wav_to_chunks(wav, chunk_seconds=10)
+
+    total_frames = 0
+    for chunk in chunks:
+        with wave.open(io.BytesIO(chunk), "rb") as w:
+            total_frames += w.getnframes()
+
+    with wave.open(io.BytesIO(wav), "rb") as src:
+        expected = src.getnframes()
+
+    assert total_frames == expected
+
+
+def test_slice_wav_non_wav_header_raises_asr_error() -> None:
+    """WAV ヘッダーでないバイト列は ASRError を送出する。"""
+    not_a_wav = b"NOT_A_WAV_FILE" * 100
+    with pytest.raises(ASRError) as exc_info:
+        _slice_wav_to_chunks(not_a_wav, chunk_seconds=10)
+    assert "WAV" in str(exc_info.value) or "failed to read" in str(exc_info.value)
+
+
+def test_slice_wav_stereo_raises_asr_error() -> None:
+    """ステレオ WAV は ASRError を送出する (whisper-server はモノラルのみ)。"""
+    wav = _make_wav(10.0, n_channels=2)
+    with pytest.raises(ASRError) as exc_info:
+        _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert "mono" in str(exc_info.value)
+
+
+def test_slice_wav_non_16khz_raises_asr_error() -> None:
+    """16kHz 以外の WAV は ASRError を送出する。"""
+    wav = _make_wav(10.0, framerate=44100)
+    with pytest.raises(ASRError) as exc_info:
+        _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert "16kHz" in str(exc_info.value)
+
+
+def test_slice_wav_8bit_raises_asr_error() -> None:
+    """8-bit (sampwidth=1) WAV は ASRError を送出する。"""
+    wav = _make_wav(10.0, sampwidth=1)
+    with pytest.raises(ASRError) as exc_info:
+        _slice_wav_to_chunks(wav, chunk_seconds=10)
+    assert "PCM_S16LE" in str(exc_info.value) or "16-bit" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +467,122 @@ async def test_transcribe_wav_file_sent_to_whisper() -> None:
     assert file_tuple[0] == "audio.wav"
     assert file_tuple[1] == fake_wav
     assert file_tuple[2] == "audio/wav"
+
+
+# ---------------------------------------------------------------------------
+# WhisperCppLocalASRClient.stream_transcribe テスト (BE-017)
+# ---------------------------------------------------------------------------
+
+
+def _make_post_side_effect(texts: list[str]) -> list[MagicMock]:
+    """チャンクごとに異なるテキストを返す httpx レスポンスモックのリストを生成する。"""
+    return [_make_http_response(status=200, json_body={"text": t}) for t in texts]
+
+
+@pytest.mark.asyncio
+async def test_stream_transcribe_happy_path() -> None:
+    """正常系: 30s WAV を chunk_seconds=10 で分割すると 3 チャンク + 1 完了チャンクを返す。"""
+    wav_30s = _make_wav(30.0)
+    chunk_texts = ["チャンク1", "チャンク2", "チャンク3"]
+
+    call_count = 0
+
+    async def _fake_post_chunk(
+        chunk_wav: bytes, params: TranscribeParams, chunk_index: int, audio_len: int
+    ) -> str:
+        nonlocal call_count
+        text = chunk_texts[call_count]
+        call_count += 1
+        return text
+
+    client = WhisperCppLocalASRClient(stream_chunk_seconds=10)
+
+    with (
+        patch(
+            "app.infrastructure.asr.whisper_cpp_client._transcode_to_wav",
+            AsyncMock(return_value=wav_30s),
+        ),
+        patch.object(client, "_post_chunk_to_whisper", side_effect=_fake_post_chunk),
+    ):
+        chunks: list[TranscribeChunk] = []
+        async for chunk in client.stream_transcribe(_make_audio()):
+            chunks.append(chunk)
+
+    # 3 通常チャンク + 1 完了チャンク
+    assert len(chunks) == 4
+    # 最初の 3 チャンクは done=False
+    for i in range(3):
+        assert chunks[i].done is False
+        assert chunks[i].chunk_index == i
+        assert chunks[i].chunk_count == 3
+        assert chunks[i].text == chunk_texts[i]
+    # 最後は done=True で full_text が結合されている
+    assert chunks[3].done is True
+    assert chunks[3].chunk_count == 3
+    assert chunks[3].text == "チャンク1チャンク2チャンク3"
+
+
+@pytest.mark.asyncio
+async def test_stream_transcribe_empty_chunk_text_raises_asr_error() -> None:
+    """チャンクで空テキストが返された場合は ASRError を送出する (BE-016 同様のゲーティング)。"""
+    wav_10s = _make_wav(10.0)
+
+    async def _fake_post_chunk_empty(
+        chunk_wav: bytes, params: TranscribeParams, chunk_index: int, audio_len: int
+    ) -> str:
+        raise ASRError(
+            f"transcribe returned empty text (chunk {chunk_index})", audio_length=audio_len
+        )
+
+    client = WhisperCppLocalASRClient(stream_chunk_seconds=10)
+
+    with (
+        patch(
+            "app.infrastructure.asr.whisper_cpp_client._transcode_to_wav",
+            AsyncMock(return_value=wav_10s),
+        ),
+        patch.object(client, "_post_chunk_to_whisper", side_effect=_fake_post_chunk_empty),
+        pytest.raises(ASRError) as exc_info,
+    ):
+        async for _ in client.stream_transcribe(_make_audio()):
+            pass
+
+    assert "empty text" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_stream_transcribe_mid_stream_failure_raises_asr_error() -> None:
+    """チャンク 1 でエラーが発生した場合、その時点で ASRError を送出してイテレータを停止する。"""
+    wav_30s = _make_wav(30.0)
+    call_count = 0
+
+    async def _fake_post_fail_at_1(
+        chunk_wav: bytes, params: TranscribeParams, chunk_index: int, audio_len: int
+    ) -> str:
+        nonlocal call_count
+        if call_count == 1:
+            raise ASRError("chunk 1 HTTP error", audio_length=audio_len)
+        text = f"chunk{call_count}"
+        call_count += 1
+        return text
+
+    client = WhisperCppLocalASRClient(stream_chunk_seconds=10)
+
+    collected: list[TranscribeChunk] = []
+    with (
+        patch(
+            "app.infrastructure.asr.whisper_cpp_client._transcode_to_wav",
+            AsyncMock(return_value=wav_30s),
+        ),
+        patch.object(client, "_post_chunk_to_whisper", side_effect=_fake_post_fail_at_1),
+        pytest.raises(ASRError),
+    ):
+        async for chunk in client.stream_transcribe(_make_audio()):
+            collected.append(chunk)
+
+    # チャンク 0 は成功したため collected に入る
+    assert len(collected) == 1
+    assert collected[0].chunk_index == 0
 
 
 # ---------------------------------------------------------------------------

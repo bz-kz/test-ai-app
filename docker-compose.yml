@@ -26,10 +26,14 @@ services:
       - LLM_BASE_URL=http://llm:11434
       - LLM_MODEL=gemma4:e4b
       - LLM_TIMEOUT_S=300
-      # ASR サービス設定 — BE-014 が使うまでは passive（コードは参照しない）
+      # ASR サービス設定 (BE-014/BE-017)
       - ASR_BASE_URL=http://asr:8080
       - ASR_MODEL=ggml-medium-q5_0.bin
       - ASR_TIMEOUT_S=90
+      # ストリーミング ASR 設定 (BE-017 / ADR-0003)
+      - ASR_STREAM_CHUNK_SECONDS=10
+      - ASR_STREAM_TOTAL_TIMEOUT_S=180
+      - ASR_STREAM_FIRST_CHUNK_LATENCY_S=25
     depends_on:
       postgres:
         condition: service_healthy

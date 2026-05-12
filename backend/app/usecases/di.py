@@ -17,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.entities import Encounter, Patient, RecordDraft, RecordFinal
 from app.infrastructure.asr import make_asr_client
 from app.infrastructure.asr.client import LocalASRClient
-from app.infrastructure.asr.types import AudioPayload, TranscribeParams, TranscribeResponse
+from app.infrastructure.asr.types import (
+    AudioPayload,
+    TranscribeChunk,
+    TranscribeParams,
+    TranscribeResponse,
+)
 from app.infrastructure.db.engine import get_session
 from app.infrastructure.db.repositories import (
     AuditLogRepository,
@@ -50,6 +55,7 @@ from app.usecases.final import (
 )
 from app.usecases.patient import create_patient, find_patient_by_id, find_patient_by_mrn
 from app.usecases.transcribe import transcribe_audio
+from app.usecases.transcribe_stream import stream_transcribe_audio
 
 # ---------------------------------------------------------------------------
 # シングルトン LLM クライアント
@@ -594,3 +600,49 @@ def make_transcribe_audio(
         )
 
     return _transcribe
+
+
+# ---------------------------------------------------------------------------
+# 音声ストリーミング文字起こしユースケースファクトリ型エイリアス (BE-017)
+# ---------------------------------------------------------------------------
+
+StreamTranscribeAudioCallable = Callable[
+    [AudioPayload, TranscribeParams | None, UUID, UUID],
+    AsyncGenerator[TranscribeChunk, None],
+]
+
+
+# ---------------------------------------------------------------------------
+# 音声ストリーミング文字起こしユースケースファクトリ依存 (BE-017)
+# ---------------------------------------------------------------------------
+
+
+def make_stream_transcribe_audio(
+    session: AsyncSession = Depends(_get_db_session),
+    asr: LocalASRClient = Depends(get_asr_client),
+) -> StreamTranscribeAudioCallable:
+    """stream_transcribe_audio ユースケースをセッション + ASR クライアント付きで返す。
+
+    ASR クライアントは get_asr_client 依存関数から取得するシングルトン。
+    テスト時は app.dependency_overrides[get_asr_client] で差し替える。
+    make_stream_record_draft (BE-013) と同じパターン。
+    """
+    encounter_repo = EncounterRepository(session)
+
+    async def _stream(
+        audio: AudioPayload,
+        params: TranscribeParams | None,
+        encounter_id: UUID,
+        clinician_id: UUID,
+    ) -> AsyncGenerator[TranscribeChunk, None]:
+        async for chunk in await stream_transcribe_audio(
+            audio=audio,
+            params=params,
+            encounter_id=encounter_id,
+            clinician_id=clinician_id,
+            asr=asr,
+            encounter_repo=encounter_repo,
+        ):
+            yield chunk
+
+    return _stream

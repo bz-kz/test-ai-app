@@ -11,29 +11,29 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                                       | Status  | Gates Touched                  | Owner     |
-| ------- | ------------------------------------------- | ------- | ------------------------------ | --------- |
-| INF-001 | Runtime Topology                            | done    | G0                             | Generator |
-| BE-001  | Inference Adapter                           | done    | G1, G2, G3, G4, G5, G7         | Generator |
-| BE-002  | Persistence                                 | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-003  | API Surface                                 | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-004  | Patient endpoints                           | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-005  | Encounter endpoints                         | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-006  | Record Draft generation                     | done    | G1, G2, G3, G4, G5, G6, G7     | Generator |
-| BE-007  | Draft edit and finalize                     | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| INF-002 | Integration gap fixes                       | done    | G0, G1, G2, G3, G4, G6, G7     | Generator |
-| BE-008  | Record Final correction chain               | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| INF-003 | LLM memory budget alignment                 | done    | G5 (primary), G6, G0           | Planner   |
-| BE-009  | List drafts for encounter                   | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-010  | Security hardening bundle                   | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-011  | INFO-level UUID hardening sweep             | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-012  | X-Clinician-Id header auth                  | done    | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-013  | Streaming draft endpoint                    | done    | G1, G2, G3, G4, G5, G6, G7     | Generator |
-| INF-004 | ASR compose service                         | done    | G0, G4, G5, G6, G7             | Generator |
-| BE-014  | ASR adapter + transcribe endpoint           | done    | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-015  | Hardening ADVICE bundle                     | done    | G1, G2, G3, G4                 | Generator |
-| BE-016  | Backend ffmpeg transcode + ASR error gating | done    | G0, G1, G2, G3, G4, G5         | Generator |
-| BE-017  | Streaming transcribe endpoint               | pending | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| ID      | Title                                       | Status      | Gates Touched                  | Owner     |
+| ------- | ------------------------------------------- | ----------- | ------------------------------ | --------- |
+| INF-001 | Runtime Topology                            | done        | G0                             | Generator |
+| BE-001  | Inference Adapter                           | done        | G1, G2, G3, G4, G5, G7         | Generator |
+| BE-002  | Persistence                                 | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-003  | API Surface                                 | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-004  | Patient endpoints                           | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-005  | Encounter endpoints                         | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-006  | Record Draft generation                     | done        | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| BE-007  | Draft edit and finalize                     | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-002 | Integration gap fixes                       | done        | G0, G1, G2, G3, G4, G6, G7     | Generator |
+| BE-008  | Record Final correction chain               | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-003 | LLM memory budget alignment                 | done        | G5 (primary), G6, G0           | Planner   |
+| BE-009  | List drafts for encounter                   | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-010  | Security hardening bundle                   | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-011  | INFO-level UUID hardening sweep             | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-012  | X-Clinician-Id header auth                  | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-013  | Streaming draft endpoint                    | done        | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| INF-004 | ASR compose service                         | done        | G0, G4, G5, G6, G7             | Generator |
+| BE-014  | ASR adapter + transcribe endpoint           | done        | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-015  | Hardening ADVICE bundle                     | done        | G1, G2, G3, G4                 | Generator |
+| BE-016  | Backend ffmpeg transcode + ASR error gating | done        | G0, G1, G2, G3, G4, G5         | Generator |
+| BE-017  | Streaming transcribe endpoint               | in-progress | G1, G2, G3, G4, G5, G6, G7     | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
