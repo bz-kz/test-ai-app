@@ -216,7 +216,7 @@ export default function DraftPage({ params }: DraftPageProps) {
   // clinicalInput を依存に含めて最新値を参照する。
   const appendTranscript = useCallback(
     (text: string) => {
-      setClinicalInput(clinicalInput.length === 0 ? text : `${clinicalInput} ${text}`);
+      setClinicalInput(clinicalInput.length === 0 ? text : `${clinicalInput}\n${text}`);
     },
     [clinicalInput, setClinicalInput]
   );

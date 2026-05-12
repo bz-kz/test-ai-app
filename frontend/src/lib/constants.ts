@@ -35,6 +35,8 @@ export const VOICE_CAPTURE_ERRORS = {
   unsupportedCodec:
     "このブラウザは音声録音に対応していません (WebM/Opus)。Chrome / Firefox / Edge をお試しください。",
   generic: "音声の文字起こしに失敗しました。",
+  /** 60 秒で録音が自動停止したことを知らせる non-disruptive toast 文言 */
+  autoStopped: "録音は60秒で停止しました",
 } as const;
 
 /** 音声入力レイテンシ UX 閾値 (ms) — frontend/SPEC.md#voice-input-latency-ux */

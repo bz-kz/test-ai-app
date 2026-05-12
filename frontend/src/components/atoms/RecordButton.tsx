@@ -24,8 +24,8 @@ export interface RecordButtonProps {
 }
 
 const defaultLabels: Record<RecordButtonState, string> = {
-  idle: "音声入力を開始",
-  recording: "音声入力を停止",
+  idle: "録音を開始",
+  recording: "録音を停止",
   uploading: "アップロード中",
 };
 
@@ -112,7 +112,7 @@ export function RecordButton({
     state === "idle"
       ? "bg-surface border border-navy text-navy hover:bg-navy/5"
       : state === "recording"
-        ? "bg-error text-white animate-pulse border-0"
+        ? "bg-error text-white motion-safe:animate-pulse border-0"
         : /* uploading */ "bg-surface border border-navy text-navy";
 
   const baseClasses =

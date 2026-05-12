@@ -19,6 +19,7 @@ function makeHookReturn(overrides: Partial<ReturnType<typeof useVoiceCapture>> =
     elapsedMs: 0,
     transcript: "",
     error: null,
+    autoStopped: false,
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
     cancel: vi.fn(),
@@ -51,8 +52,8 @@ describe("VoiceCapture molecule", () => {
   it("idle 状態: RecordButton が idle、ライブリージョンは空", () => {
     mockUseVoiceCapture.mockReturnValue(makeHookReturn());
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
-    // RecordButton の aria-label は "音声入力を開始"
-    expect(screen.getByRole("button", { name: "音声入力を開始" })).toBeInTheDocument();
+    // RecordButton の aria-label は "録音を開始"
+    expect(screen.getByRole("button", { name: "録音を開始" })).toBeInTheDocument();
     // aria-live リージョンにエラーや経過時間が表示されないこと
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -62,14 +63,14 @@ describe("VoiceCapture molecule", () => {
     const hookReturn = makeHookReturn();
     mockUseVoiceCapture.mockReturnValue(hookReturn);
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: "音声入力を開始" }));
+    await user.click(screen.getByRole("button", { name: "録音を開始" }));
     expect(hookReturn.start).toHaveBeenCalledTimes(1);
   });
 
   it("recording 状態: RecordButton が recording (aria-pressed=true)、経過時間が表示される", () => {
     mockUseVoiceCapture.mockReturnValue(makeHookReturn({ status: "recording", elapsedMs: 5200 }));
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
-    const btn = screen.getByRole("button", { name: "音声入力を停止" });
+    const btn = screen.getByRole("button", { name: "録音を停止" });
     expect(btn).toHaveAttribute("aria-pressed", "true");
     // 5200ms → 0:05 / 60s
     expect(screen.getByText(/0:05 \/ 60s/)).toBeInTheDocument();
@@ -80,7 +81,7 @@ describe("VoiceCapture molecule", () => {
     const hookReturn = makeHookReturn({ status: "recording" });
     mockUseVoiceCapture.mockReturnValue(hookReturn);
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: "音声入力を停止" }));
+    await user.click(screen.getByRole("button", { name: "録音を停止" }));
     expect(hookReturn.stop).toHaveBeenCalledTimes(1);
   });
 
@@ -103,11 +104,8 @@ describe("VoiceCapture molecule", () => {
   it("permission_denied: JP エラーメッセージが alert として表示される", () => {
     mockUseVoiceCapture.mockReturnValue(
       makeHookReturn({
-        status: "error",
-        error: {
-          kind: "permissionDenied",
-          message: "マイクへのアクセスが許可されていません。ブラウザ設定を確認してください。",
-        },
+        status: "permission_denied",
+        error: null,
       })
     );
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
@@ -154,7 +152,7 @@ describe("VoiceCapture molecule", () => {
   it("disabled=true のとき RecordButton が無効化される", () => {
     mockUseVoiceCapture.mockReturnValue(makeHookReturn());
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} disabled />);
-    expect(screen.getByRole("button", { name: "音声入力を開始" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "録音を開始" })).toBeDisabled();
   });
 
   it("uploading 中は RecordButton が無効化される (外部 disabled なし)", () => {
@@ -170,6 +168,37 @@ describe("VoiceCapture molecule", () => {
     render(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
     // uploading 状態: RecordButton は "アップロード中"
     expect(screen.getByRole("button", { name: "アップロード中" })).toBeInTheDocument();
+  });
+
+  it("60 秒自動停止 toast: recording→uploading かつ autoStopped=true のとき表示される", () => {
+    // recording 状態から始める
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({ status: "recording", autoStopped: false })
+    );
+    const { rerender } = render(
+      <VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />
+    );
+    // uploading かつ autoStopped=true に遷移
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({ status: "uploading", elapsedMs: 0, autoStopped: true })
+    );
+    rerender(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("録音は60秒で停止しました");
+  });
+
+  it("ユーザー停止 toast: recording→uploading かつ autoStopped=false のときトーストは表示されない", () => {
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({ status: "recording", autoStopped: false })
+    );
+    const { rerender } = render(
+      <VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />
+    );
+    // ユーザーが停止 → autoStopped=false
+    mockUseVoiceCapture.mockReturnValue(
+      makeHookReturn({ status: "uploading", elapsedMs: 0, autoStopped: false })
+    );
+    rerender(<VoiceCapture encounterId={FAKE_ENCOUNTER_ID} onTranscript={vi.fn()} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   // AUDIO_MIME_TYPE の参照が定数から来ていることを確認 (ハードコードしていない)

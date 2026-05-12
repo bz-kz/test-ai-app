@@ -294,7 +294,8 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 
 ## RecordButton + VoiceCapture + draft-page wiring (FE-009)
 
-- **Goal:** Add microphone-based voice input to the draft page: RecordButton atom, VoiceCapture molecule, useVoiceCapture hook, asr service, constants — all wired so the transcript appends to `clinical_input` without replacing existing text. Audio stays in memory only; never hits storage.
+- **Goal:** Add microphone-based voice input to the draft page: RecordButton atom, VoiceCapture molecule, useVoiceCapture hook, transcribe service, constants — all wired so the transcript appends to `clinical_input` without replacing existing text. Audio stays in memory only; never hits storage.
+- **Status:** qa (G1/G2/G3/G4/G5 green; 7 G6 deviations resolved)
 - **Inputs:**
   - frontend/SPEC.md#voice-capture — full acceptance criteria
   - frontend/SPEC.md#voice-input-latency-ux — latency UX tiers for ASR
@@ -303,16 +304,16 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
   - docs/adr/0001-voice-input-and-local-asr.md — Accepted; audio = PHI; no Web Speech API; no hosted ASR
   - .claude/rules/local-llm-and-phi.md §1, §3, §4 — audio blob + transcript are PHI; never in console/storage
 - **Acceptance:**
-  - [ ] `src/components/atoms/RecordButton.tsx` — idle/recording/uploading states; 48×48 px; aria-pressed; aria-label JP; keyboard accessible; disabled state.
+  - [ ] `src/components/atoms/RecordButton.tsx` — idle/recording/uploading states; 48×48 px; aria-pressed; aria-label `"録音を開始"` (idle) / `"録音を停止"` (recording); keyboard accessible; disabled state; `motion-safe:animate-pulse` for recording.
   - [ ] `src/components/atoms/__tests__/RecordButton.test.tsx` — all visual states, onClick, disabled.
-  - [ ] `src/services/asr.ts` — `transcribeAudio(encounterId, blob, opts)` → tagged union; X-Clinician-Id; no PHI in logs.
-  - [ ] `src/services/__tests__/asr.test.ts` — each tagged-union branch with mocked fetch.
-  - [ ] `src/hooks/useVoiceCapture.ts` — status machine; start/stop/cancel; 60s auto-stop; AbortController; audio Blob in useRef only.
-  - [ ] `src/hooks/__tests__/useVoiceCapture.test.ts` — state transitions, permission denial, 60s auto-stop, cancel, success, error paths.
-  - [ ] `src/components/molecules/VoiceCapture.tsx` — composes RecordButton + elapsed counter + error region; latency UX tiers; JP error strings from constants; aria-live.
-  - [ ] `src/components/molecules/__tests__/VoiceCapture.test.tsx` — idle render, click→recording, mocked success→onTranscript, permission_denied, 503 path, 60s auto-stop.
-  - [ ] `src/lib/constants.ts` — VOICE_CAPTURE_ERRORS + AUDIO_MAX_DURATION_S + AUDIO_MIME_TYPE + AUDIO_MAX_BYTES added.
-  - [ ] `src/app/encounters/[encounterId]/draft/page.tsx` — VoiceCapture wired; onTranscript appends with leading space; disabled while finalized/editing/streaming.
+  - [ ] `src/services/transcribe.ts` — `transcribeAudio(encounterId, blob, opts)` → tagged union; X-Clinician-Id; no PHI in logs.
+  - [ ] `src/services/__tests__/transcribe.test.ts` — each tagged-union branch with mocked fetch.
+  - [ ] `src/hooks/useVoiceCapture.ts` — status machine `idle|requesting_permission|recording|uploading|success|error|permission_denied`; `getUserMedia({ audio: { channelCount: 1 } })`; start/stop/cancel; 60s auto-stop with `autoStopped` flag; AbortController; audio Blob in useRef only.
+  - [ ] `src/hooks/__tests__/useVoiceCapture.test.ts` — state transitions, permission denial → permission_denied status, 60s auto-stop, cancel, success, error paths.
+  - [ ] `src/components/molecules/VoiceCapture.tsx` — composes RecordButton + elapsed counter + error region; latency UX tiers; JP error strings from constants; aria-live; 60s auto-stop toast `"録音は60秒で停止しました"`; `permission_denied` alert.
+  - [ ] `src/components/molecules/__tests__/VoiceCapture.test.tsx` — idle render, click→recording, mocked success→onTranscript, permission_denied, 503 path, 60s auto-stop toast, user-stop vs auto-stop differentiation.
+  - [ ] `src/lib/constants.ts` — VOICE_CAPTURE_ERRORS (incl. `autoStopped`) + AUDIO_MAX_DURATION_S + AUDIO_MIME_TYPE + AUDIO_MAX_BYTES added.
+  - [ ] `src/app/encounters/[encounterId]/draft/page.tsx` — VoiceCapture wired; onTranscript appends with newline separator; disabled while finalized/editing/streaming.
   - [ ] No FE-008 regression — all existing tests still pass.
   - [ ] G1 `npx tsc --noEmit` — 0 errors.
   - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
@@ -324,7 +325,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
 - **Inference Impact:** yes; consumes POST /encounters/{id}/transcribe ASR path.
 - **Data Sensitivity:** PHI; audio bytes + transcript are PHI; Blob in useRef only; never in console/storage/URL.
 - **Gates Touched:** G1, G2, G3, G4, G5, G6, G7
-- **Affected Layers:** atoms (RecordButton), molecules (VoiceCapture), hooks (useVoiceCapture), services (asr), app (draft page), lib (constants)
+- **Affected Layers:** atoms (RecordButton), molecules (VoiceCapture), hooks (useVoiceCapture), services (transcribe), app (draft page), lib (constants)
 
 ---
 

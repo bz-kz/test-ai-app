@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useVoiceCapture } from "../useVoiceCapture";
 import { AUDIO_MAX_DURATION_S, AUDIO_MIME_TYPE } from "@/lib/constants";
 
-// asr サービスをモック — 実際の fetch は呼び出さない
-vi.mock("@/services/asr", () => ({
+// transcribe サービスをモック — 実際の fetch は呼び出さない
+vi.mock("@/services/transcribe", () => ({
   transcribeAudio: vi.fn(),
 }));
 
-import { transcribeAudio } from "@/services/asr";
+import { transcribeAudio } from "@/services/transcribe";
 const mockTranscribe = vi.mocked(transcribeAudio);
 
 // ---- MediaRecorder フェイク ----
@@ -99,7 +99,7 @@ describe("useVoiceCapture", () => {
     expect(result.current.error?.kind).toBe("unsupportedCodec");
   });
 
-  it("マイク権限拒否: status=error、kind=permissionDenied", async () => {
+  it("マイク権限拒否: status=permission_denied", async () => {
     Object.defineProperty(global.navigator, "mediaDevices", {
       value: {
         getUserMedia: vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError")),
@@ -111,8 +111,8 @@ describe("useVoiceCapture", () => {
     await act(async () => {
       await result.current.start();
     });
-    expect(result.current.status).toBe("error");
-    expect(result.current.error?.kind).toBe("permissionDenied");
+    expect(result.current.status).toBe("permission_denied");
+    expect(result.current.error).toBeNull();
   });
 
   it("成功パス: transcript が設定され status=success になる", async () => {

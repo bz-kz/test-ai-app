@@ -4,7 +4,7 @@
  * useVoiceCapture フック — マイク録音 → 文字起こし状態機械。
  *
  * 状態遷移:
- *   idle → permission-requested → recording → stopping → uploading → success | error
+ *   idle → requesting_permission → recording → uploading → success | error | permission_denied
  *   任意の状態 → cancel() → idle
  *
  * PHI ルール (local-llm-and-phi.md §3/§4):
@@ -17,17 +17,17 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { transcribeAudio } from "@/services/asr";
+import { transcribeAudio } from "@/services/transcribe";
 import { AUDIO_MIME_TYPE, AUDIO_MAX_DURATION_S, VOICE_CAPTURE_ERRORS } from "@/lib/constants";
 
 export type VoiceCaptureStatus =
   | "idle"
-  | "permission-requested"
+  | "requesting_permission"
   | "recording"
-  | "stopping"
   | "uploading"
   | "success"
-  | "error";
+  | "error"
+  | "permission_denied";
 
 export interface VoiceCaptureError {
   kind:
@@ -47,6 +47,8 @@ export interface UseVoiceCaptureReturn {
   transcript: string;
   /** エラー詳細 (status === "error" のとき設定される) */
   error: VoiceCaptureError | null;
+  /** 60 秒自動停止かどうかのフラグ (VoiceCapture で toast 表示に使う) */
+  autoStopped: boolean;
   start: () => Promise<void>;
   stop: () => void;
   cancel: () => void;
@@ -57,6 +59,7 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<VoiceCaptureError | null>(null);
+  const [autoStopped, setAutoStopped] = useState(false);
 
   // PHI: audio Blob は useRef に保持し、React state に入れない (DevTools スナップショット回避)
   const chunksRef = useRef<Blob[]>([]);
@@ -117,19 +120,18 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
       return;
     }
 
-    setStatus("permission-requested");
+    setStatus("requesting_permission");
     setError(null);
     setTranscript("");
+    setAutoStopped(false);
 
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // モノラル (channelCount: 1) を要求してペイロードを ≤2 MB に収める
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
     } catch {
-      setError({
-        kind: "permissionDenied",
-        message: VOICE_CAPTURE_ERRORS.permissionDenied,
-      });
-      setStatus("error");
+      // マイク権限拒否 → permission_denied 状態へ遷移
+      setStatus("permission_denied");
       return;
     }
 
@@ -224,7 +226,6 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
   }, [encounterId, startTimer]);
 
   const stop = useCallback(() => {
-    setStatus("stopping");
     if (recorderRef.current && recorderRef.current.state === "recording") {
       recorderRef.current.stop();
       // onstop ハンドラが uploading への遷移と transcribeAudio 呼び出しを担当する
@@ -244,17 +245,20 @@ export function useVoiceCapture(encounterId: string): UseVoiceCaptureReturn {
     }
     cleanup();
     setElapsedMs(0);
+    setAutoStopped(false);
     setStatus("idle");
   }, [cleanup]);
 
   // 60 秒自動停止 — recording 中に AUDIO_MAX_DURATION_S を超えたら stop() を呼ぶ
   useEffect(() => {
     if (status === "recording" && elapsedMs >= AUDIO_MAX_DURATION_S * 1000) {
+      // 自動停止フラグを立ててから stop する
+      setAutoStopped(true);
       stop();
     }
   }, [status, elapsedMs, stop]);
 
-  return { status, elapsedMs, transcript, error, start, stop, cancel };
+  return { status, elapsedMs, transcript, error, autoStopped, start, stop, cancel };
 }
 
 export default useVoiceCapture;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { transcribeAudio } from "../asr";
+import { transcribeAudio } from "../transcribe";
 import { API_BASE_URL, CLINICIAN_ID } from "@/lib/constants";
 
 // fetch をグローバルモック

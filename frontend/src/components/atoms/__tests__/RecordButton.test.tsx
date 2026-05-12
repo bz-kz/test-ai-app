@@ -6,18 +6,18 @@ import RecordButton from "../RecordButton";
 describe("RecordButton atom", () => {
   // --- 状態別レンダリング ---
 
-  it("idle 状態: aria-pressed=false、デフォルト aria-label が '音声入力を開始'", () => {
+  it("idle 状態: aria-pressed=false、デフォルト aria-label が '録音を開始'", () => {
     render(<RecordButton state="idle" onClick={vi.fn()} />);
     const btn = screen.getByRole("button");
     expect(btn).toHaveAttribute("aria-pressed", "false");
-    expect(btn).toHaveAccessibleName("音声入力を開始");
+    expect(btn).toHaveAccessibleName("録音を開始");
   });
 
-  it("recording 状態: aria-pressed=true、デフォルト aria-label が '音声入力を停止'", () => {
+  it("recording 状態: aria-pressed=true、デフォルト aria-label が '録音を停止'", () => {
     render(<RecordButton state="recording" onClick={vi.fn()} />);
     const btn = screen.getByRole("button");
     expect(btn).toHaveAttribute("aria-pressed", "true");
-    expect(btn).toHaveAccessibleName("音声入力を停止");
+    expect(btn).toHaveAccessibleName("録音を停止");
   });
 
   it("uploading 状態: aria-pressed=false、デフォルト aria-label が 'アップロード中'", () => {
