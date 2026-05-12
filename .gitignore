@@ -66,5 +66,8 @@ Thumbs.db
 # Playwright MCP の一時アーティファクト (snapshot YAML / console log / screenshot)。
 # Option C の UI 検証で main loop が生成する; リポジトリに commit しない。
 .playwright-mcp/
-fe*-state.png
-fe*-error-state.png
+# リポジトリルートに出力される PNG / JPG (Playwright スクリーンショット等の調査用一時ファイル)。
+# サブディレクトリの実際のアセットを誤って無視しないよう、明示的にリポジトリ直下のみ対象とする。
+/*.png
+/*.jpg
+/*.jpeg
