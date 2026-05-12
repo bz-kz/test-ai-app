@@ -11,27 +11,28 @@ Active task list for the backend. Each task is a Block per `docs/handoff-contrac
 
 ## Task Index
 
-| ID      | Title                             | Status | Gates Touched                  | Owner     |
-| ------- | --------------------------------- | ------ | ------------------------------ | --------- |
-| INF-001 | Runtime Topology                  | done   | G0                             | Generator |
-| BE-001  | Inference Adapter                 | done   | G1, G2, G3, G4, G5, G7         | Generator |
-| BE-002  | Persistence                       | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-003  | API Surface                       | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-004  | Patient endpoints                 | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-005  | Encounter endpoints               | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-006  | Record Draft generation           | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
-| BE-007  | Draft edit and finalize           | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| INF-002 | Integration gap fixes             | done   | G0, G1, G2, G3, G4, G6, G7     | Generator |
-| BE-008  | Record Final correction chain     | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| INF-003 | LLM memory budget alignment       | done   | G5 (primary), G6, G0           | Planner   |
-| BE-009  | List drafts for encounter         | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-010  | Security hardening bundle         | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-011  | INFO-level UUID hardening sweep   | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-012  | X-Clinician-Id header auth        | done   | G1, G2, G3, G4, G6, G7         | Generator |
-| BE-013  | Streaming draft endpoint          | done   | G1, G2, G3, G4, G5, G6, G7     | Generator |
-| INF-004 | ASR compose service               | done   | G0, G4, G5, G6, G7             | Generator |
-| BE-014  | ASR adapter + transcribe endpoint | done   | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
-| BE-015  | Hardening ADVICE bundle           | done   | G1, G2, G3, G4                 | Generator |
+| ID      | Title                                       | Status      | Gates Touched                  | Owner     |
+| ------- | ------------------------------------------- | ----------- | ------------------------------ | --------- |
+| INF-001 | Runtime Topology                            | done        | G0                             | Generator |
+| BE-001  | Inference Adapter                           | done        | G1, G2, G3, G4, G5, G7         | Generator |
+| BE-002  | Persistence                                 | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-003  | API Surface                                 | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-004  | Patient endpoints                           | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-005  | Encounter endpoints                         | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-006  | Record Draft generation                     | done        | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| BE-007  | Draft edit and finalize                     | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-002 | Integration gap fixes                       | done        | G0, G1, G2, G3, G4, G6, G7     | Generator |
+| BE-008  | Record Final correction chain               | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| INF-003 | LLM memory budget alignment                 | done        | G5 (primary), G6, G0           | Planner   |
+| BE-009  | List drafts for encounter                   | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-010  | Security hardening bundle                   | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-011  | INFO-level UUID hardening sweep             | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-012  | X-Clinician-Id header auth                  | done        | G1, G2, G3, G4, G6, G7         | Generator |
+| BE-013  | Streaming draft endpoint                    | done        | G1, G2, G3, G4, G5, G6, G7     | Generator |
+| INF-004 | ASR compose service                         | done        | G0, G4, G5, G6, G7             | Generator |
+| BE-014  | ASR adapter + transcribe endpoint           | done        | G0, G1, G2, G3, G4, G5, G6, G7 | Generator |
+| BE-015  | Hardening ADVICE bundle                     | done        | G1, G2, G3, G4                 | Generator |
+| BE-016  | Backend ffmpeg transcode + ASR error gating | in-progress | G0, G1, G2, G3, G4, G5         | Generator |
 
 Note: INF-NNN is the ID convention for infrastructure Blocks that cross all layers (compose, network, environment).
 
@@ -646,4 +647,39 @@ Note: INF-NNN is the ID convention for infrastructure Blocks that cross all laye
 - **Data Sensitivity:** PHI (hardening of PHI log surfaces — no new exposure introduced)
 - **Gates Touched:** G1, G2, G3, G4
 - **Affected Layers:** domain (mask_phi), interfaces (exception_handlers), docs (TASKS.md)
+- **Status:** qa
+
+---
+
+## Backend ffmpeg transcode + ASR error gating (BE-016)
+
+- **Goal:** (a) Transcode `audio/webm;codecs=opus` (and any other non-WAV audio content-type) to 16 kHz mono PCM WAV in `WhisperCppLocalASRClient.transcribe()` before POSTing to whisper-server. (b) Detect empty transcript / decode-failure response and raise `ASRError` → 503 surfaced to frontend as `transcription_unavailable`. (c) Add ffmpeg to `backend/Dockerfile`. Restores the SPEC-intended user flow (record → upload → transcript) without rebuilding the ASR container.
+
+  **ADR-0001 erratum:** ADR-0001 §Decision stated "Resample to 16 kHz happens server-side in whisper.cpp". This is incorrect for source-built whisper.cpp compiled without libavcodec (INF-004's `docker/asr/Dockerfile` does not link ffmpeg). The intent (local ASR transcription) is preserved; the implementation path moves the transcode step to the backend Python layer.
+
+- **Inputs:**
+  - backend/SPEC.md#asr-adapter
+  - .claude/rules/local-llm-and-phi.md §3
+  - docs/adr/0001-voice-input-and-local-asr.md
+  - backend/app/infrastructure/asr/whisper_cpp_client.py (BE-014 implementation)
+  - backend/Dockerfile
+- **Acceptance:**
+  - [x] `backend/Dockerfile` adds `apt-get install -y --no-install-recommends ffmpeg`
+  - [x] `_transcode_to_wav(audio_bytes, source_mime)` private async function in `whisper_cpp_client.py`; pipes stdin → stdout via `asyncio.create_subprocess_exec`; no temp files; raises `ASRError` on non-zero exit or missing binary
+  - [x] `audio/wav` short-circuit: `_transcode_to_wav` returns bytes unchanged when `source_mime.startswith("audio/wav")`
+  - [x] `transcribe()` calls `_transcode_to_wav()` before building `files=` dict; sends `("audio.wav", wav_bytes, "audio/wav")` to whisper-server
+  - [x] Empty-text gating: `{"text": ""}` or whitespace-only → `ASRError("transcribe returned empty text ...") → 503`
+  - [x] Unit tests: WAV passthrough (2), transcode success, non-zero exit → ASRError, ffmpeg missing → ASRError; transcribe tests updated to mock `_transcode_to_wav`; empty-text gating; whitespace-text gating; WAV file sent to whisper
+  - [x] G0 Dockerfile change; `docker compose build backend` required (documented)
+  - [x] G1 pyright 0 errors
+  - [x] G2 ruff clean
+  - [x] G3 pytest 279 pass (was 271; +8 new tests)
+  - [x] G4 security-check PASS: subprocess stderr captured-and-discarded (not logged); no temp files; no hosted-LLM SDKs; no direct ASR calls outside infra
+  - [x] G5 cost-check PASS: ffmpeg transcode <2 s for 60 s/2 MB clip; ASR_TIMEOUT_S=90 provides headroom; image size delta ~80 MB (acceptable)
+- **Out-of-scope:** Rebuilding whisper.cpp ASR image with libavcodec. Frontend changes. Streaming transcription. Audio persistence.
+- **Open-questions:** _(none)_
+- **Inference Impact:** yes; ASR path unchanged; whisper.cpp medium-q5_0; ASR_TIMEOUT_S=90
+- **Data Sensitivity:** PHI; audio bytes in-memory only; subprocess piping; no disk writes
+- **Gates Touched:** G0, G1, G2, G3, G4, G5
+- **Affected Layers:** infrastructure (asr/whisper_cpp_client.py), docker (backend Dockerfile)
 - **Status:** qa
