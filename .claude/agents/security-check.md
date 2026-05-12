@@ -21,11 +21,13 @@ You are the **security-check** agent. The product handles PHI under a non-negoti
 1. **PHI in logs.** Any `logger.*`, `print`, `console.log`, or unmasked exception that touches a request body, prompt, or model response involving PHI is CRITICAL.
 2. **Inference-layer boundary.** Direct LLM calls outside `backend/app/infrastructure/llm/` — including `httpx.post("http://llm:11434...")`, `requests.post(...)`, `fetch("http://llm...")` — are CRITICAL.
 3. **Hosted-LLM dependencies.** Presence of `openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `@aws-sdk/client-bedrock`, `langchain-openai`, etc. in dependency manifests is CRITICAL.
-4. **Compose egress.** `docker-compose.yml` must not publish `llm` or `postgres` ports to the host, must not set `extra_hosts` to public IPs, and must keep `llm`/`postgres` on an internal-only network. Frontend may publish 3000; backend may publish 8000.
+4. **Compose egress.** `docker-compose.yml` must not publish `llm`, `postgres`, or `asr` ports to the host, must not set `extra_hosts` to public IPs, and must keep `llm`/`postgres`/`asr` on an internal-only network. Frontend may publish 3000; backend may publish 8000.
 5. **Frontend storage of PHI.** PHI written to `localStorage`, `sessionStorage`, or IndexedDB is CRITICAL.
 6. **API responses.** Endpoints returning PHI fields the caller did not request (default-include serializers) are WARNING and become CRITICAL if combined with weak auth.
 7. **Pydantic at boundaries.** Untyped `dict` flowing into a router from external input — WARNING.
 8. **Dependency vulnerabilities.** Known CVEs in pinned versions — severity follows the upstream advisory.
+9. **MediaRecorder / getUserMedia outside voice components.** Any reference to `getUserMedia` or `MediaRecorder` outside `VoiceCapture`, `RecordButton`, or `useVoiceCapture` is CRITICAL — mic capture outside the dedicated voice boundary leaks audio PHI.
+10. **PR-body PHI leakage.** Per ADR-0005, agents may open PRs via `gh pr create`. The PR title and body MUST NOT contain PHI (patient name, MRN, DOB, free-text clinical content). Any `gh pr create` command whose `--title` or `--body` references PHI fields is CRITICAL.
 
 ## Verification commands
 
@@ -44,6 +46,19 @@ grep -RnE 'logger\.(info|warning|error)\(|print\(' backend/app | grep -Ei 'patie
 
 # Compose egress.
 grep -nE 'extra_hosts|host\.docker\.internal|"5432:5432"|"11434:11434"' docker-compose.yml
+
+# Hosted-ASR SDKs (frontend + backend) — ADR-0001
+grep -E '"(deepgram|assemblyai|@aws-sdk/client-transcribe|@azure/cognitiveservices-speech-sdk|@google-cloud/speech)"' \
+  frontend/package.json backend/requirements.txt && exit 1 || echo "clean"
+
+# Browser Web Speech API
+grep -RnE 'webkitSpeechRecognition|window\.SpeechRecognition|\bSpeechRecognition\b' frontend/src && exit 1 || echo "clean"
+
+# Direct ASR calls outside infrastructure layer
+grep -RnE 'http://asr[: ]|whisper' backend/app | grep -v '^backend/app/infrastructure/asr/' && exit 1 || echo "clean"
+
+# MediaRecorder / getUserMedia outside dedicated voice modules
+grep -RnE 'getUserMedia|MediaRecorder' frontend/src | grep -vE '(VoiceCapture|RecordButton|useVoiceCapture)' && exit 1 || echo "clean"
 ```
 
 ## Output shape (structured)

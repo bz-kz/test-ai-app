@@ -26,6 +26,7 @@ This skill replaces the legacy `security-check` subagent. It is a deterministic 
 7. **API responses.** Endpoints returning PHI fields the caller did not explicitly request — **WARNING** (becomes **CRITICAL** if combined with weak auth).
 8. **Pydantic at boundaries.** Untyped `dict` flowing into a router from external input — **WARNING**.
 9. **MediaRecorder / getUserMedia outside voice components.** Frontend mic capture references outside the dedicated voice modules — **CRITICAL** (per ADR-0001).
+10. **PR-body PHI leakage.** Raw PHI tokens (patient names, MRNs, DOBs, addresses) in a PR title or body — **CRITICAL**. The PR body is reviewed in GitHub's UI; treat it as a public log surface even though the repo is private, on the same footing as a `logger.info` call. References by Block ID, by fixture name, or by structural anchor are PASS. (Added by ADR-0005.)
 
 ## Verification commands
 
@@ -61,9 +62,22 @@ grep -RnE 'logger\.(info|warning|error)\(|print\(' backend/app | grep -Ei 'patie
 
 # Probe 10 — Frontend PHI storage
 grep -RnE '\b(localStorage|sessionStorage|indexedDB)\b' frontend/src
+
+# Probe 10b — PHI in React state (ADR-0004): PHI buffers must live in useRef, not useState.
+# Audio blobs, partial transcripts, chunk accumulation, SSE draft buffers are all PHI.
+# Inspect each hit manually — flag any useState holding audio/transcript/chunk content.
+grep -RnE 'useState[<(][^)>]*[Pp]artial|useState[<(][^)>]*[Tt]ranscript|useState[<(][^)>]*[Cc]hunk[A-Z]|useState[<(][^)>]*[Aa]udio' frontend/src/hooks frontend/src/components 2>/dev/null
+
+# Probe 11 — PR-body / PR-title PHI scan (run before opening a PR; ADR-0005)
+# If `gh` is installed AND the PR is already drafted:
+#   gh pr view --json title,body --jq '.title, .body'
+# If not yet pushed, render the body locally before push and grep it:
+#   cat /tmp/pr-body.md
+# Inspect each hit manually. Raw patient names, MRNs, DOBs, addresses in PR title or body
+# are CRITICAL. References by Block ID, fixture name, or structural anchor are PASS.
 ```
 
-For probes 9 and 10, hits are not automatic failures — inspect each line. PHI variables passed to log calls or storage APIs without `mask_phi`/`maskPhi` are CRITICAL.
+For probes 9, 10, and 11, hits are not automatic failures — inspect each line. PHI variables passed to log calls, storage APIs, or PR titles/bodies without `mask_phi`/`maskPhi` are CRITICAL.
 
 ## Output format
 

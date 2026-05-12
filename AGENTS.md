@@ -32,6 +32,8 @@ A file's owner is the agent that may modify it. Other agents may read.
 | `.claude/agents/*.md`                            | Human only          | Agents do not self-modify their own role definitions.                            |
 | `.claude/rules/*.md`                             | Human only          | Changes require an ADR.                                                          |
 | `.claude/settings.json`, hooks                   | Human only          | Out of bounds for all agents.                                                    |
+| `/CLAUDE.md` (project root)                      | Human only          | Project-wide policy file; agents propose text, never edit (2026-05-12).          |
+| `~/.claude/CLAUDE.md` (user global)              | Human only          | User's cross-project preferences; agents propose text only (2026-05-12).         |
 | Source code, tests, `docker-compose.yml`         | Generator           | Evaluator may read and run; never edits.                                         |
 
 ## 4. Language rules
@@ -80,13 +82,15 @@ An agent escalates to Planner via the Spec Pivot Request shape when:
 
 ### 8.2 Refusals (non-negotiable)
 
-- Never `git push` from any agent. The human pushes.
+- Never `git push origin main` (any form). Never push to a branch flagged as the default / protected branch on GitHub. Pushing to other branches is permitted per §8.7.
+- Never `git push --force` / `--force-with-lease` on any branch, including the agent's own feature branch. History rewrite remains human-only.
 - Never `--amend` a commit that has been handed to the Evaluator. Add a follow-up commit instead.
 - Never `--no-verify` / `--no-gpg-sign` or any hook bypass. If a hook fails, fix the underlying issue and create a new commit.
 - Never destructive ops (`reset --hard`, `clean -fd`, `branch -D`, `checkout -- <path>`, `restore <path>`, `push -f`, `rebase -i`) without an explicit user instruction in the current turn.
 - Never `git add -A` / `git add .`. Stage by explicit path so secrets and large binaries can't slip in.
 - Never edit human-only files via git tooling (see §3: `.claude/settings.json`, `.claude/agents/*.md`, `.claude/rules/*.md`).
 - Never `git log -uall` (memory-exhaustive on large repos).
+- Never `gh pr merge` in any form (`--auto`, `--admin`, `--squash`, `--rebase`, `--merge`). Never `gh pr close` / `gh pr reopen` / `git push --delete`. Merge is the human's sole responsibility. See §8.7 for full PR-flow rules.
 
 ### 8.3 Commit message format
 
@@ -116,6 +120,15 @@ Before every `git commit`, run in parallel:
 
 Scan staged paths for `.env*`, `*.key`, `*.pem`, `credentials*`, anything under `secrets/`. Any match → STOP, surface to the user, do not commit even if the user said "commit everything".
 
+Before every `git push`, run in parallel:
+
+1. `git status` — working tree clean.
+2. `git log origin/main..HEAD --oneline` — the commits about to be pushed match stated intent.
+3. `git branch --show-current` — confirm the branch is NOT `main` and NOT a default / protected branch.
+4. `git remote -v` — confirm `origin` points at the expected GitHub URL; a different remote is a STOP signal.
+
+If any check returns a STOP signal, do NOT push; surface to the user.
+
 ### 8.5 Hook-failure protocol
 
 If `git commit` fails due to a pre-commit hook:
@@ -126,7 +139,31 @@ If `git commit` fails due to a pre-commit hook:
 
 ### 8.6 Why these rules are inline (not in a Skill)
 
-Earlier the project had a `git-operations` Skill that codified the same rules; it was removed once the rules proved load-bearing enough to live in the cross-agent contract directly. Reintroducing a git-specific Skill requires an ADR — agents should not re-skillify what is already canonical here.
+Earlier the project had a `git-operations` Skill that codified the same rules; it was removed once the rules proved load-bearing enough to live in the cross-agent contract directly. Reintroducing a git-specific Skill requires an ADR — agents should not re-skillify what is already canonical here. The `.claude/skills/git-pr-flow/SKILL.md` and `.claude/skills/pr-body-template/SKILL.md` (ADR-0005 authorized) are recipe-only; hard rules stay in §8.
+
+### 8.7 Pushing and pull requests
+
+Permitted (per ADR-0005):
+
+- `git push origin <branch>` where `<branch>` is NOT `main` and NOT a default / protected branch.
+- `gh pr create --base main --head <branch> --title "<conventional-subject>" --body-file <rendered>`. Defaults to `--ready`. Use `--draft` only when the Block is part of a multi-Block work branch and follow-up commits are expected before review.
+- `gh pr view <n>`, `gh pr diff <n>`, `gh pr checks <n>` — read-only inspection of agent-opened PRs.
+- `gh pr ready <n>` — only on a PR THIS agent opened in THIS session, only when flipping from `--draft` to ready, only as the Evaluator's commit-on-pass continuation.
+
+Forbidden (mirrors §8.2 additions):
+
+- Push to `main`. Force-push to anything. Remote branch deletion (`git push --delete`).
+- Any form of merge (`gh pr merge` with any flag). The human merges.
+- `gh pr close` / `gh pr reopen`. The human decides PR lifecycle.
+- `gh pr edit` after the PR has any human comment. Respond with a new commit, not a body rewrite.
+- Cross-repo / fork pushes. Origin only.
+- `--no-verify` / `--no-gpg-sign` during push (mirrors §8.2's commit rule).
+
+Recipe lives in `.claude/skills/git-pr-flow/SKILL.md`. PR body template lives in `.claude/skills/pr-body-template/SKILL.md` (skill form) and `.github/pull_request_template.md` (GitHub auto-fill). Hard rules above are canonical; the skills are recipe-only.
+
+Branch strategy default: feature-class Blocks (`feat:`, `refactor:`, `fix:` ≥3 files) get `<prefix>/<block-id>-<short-slug>` cut off `main` with a per-Block PR. Chore / docs / test Blocks batch onto the current work branch (`001-ai`-style) and PR when the branch is ready for review. Full matrix in the skill recipe.
+
+`gh` unavailable → fall back to surfacing the constructed PR URL and rendered body to the user; do NOT automate around a missing `gh`.
 
 ## 9. Things every agent should keep visible
 

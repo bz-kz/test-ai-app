@@ -40,7 +40,7 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
   - [ ] Concrete `OllamaLocalLLMClient` targets `http://llm:11434` and the model name from configuration.
   - [ ] Test-only `FakeLocalLLMClient` is the default in unit tests.
   - [ ] Single supported model: `gemma4:e4b` (Gemma 4 E4B). The model name is read from configuration (`LLM_MODEL`), never hardcoded; switching variants requires an ADR.
-  - [ ] Timeout default: 60 s for `generate`, 120 s end-to-end for `stream`. Cancellable.
+  - [ ] Timeout default: 300 s for `generate` and 300 s end-to-end for `stream` (raised from 60 s / 120 s in commit `fa04bae` to cover CPU-only inference on the reference hardware). Cancellable.
   - [ ] On non-200 or timeout, the client raises a typed `InferenceError` carrying a masked context, never the raw prompt.
 - **Out-of-scope:** Multi-model routing, embeddings (separate Spec), function-calling.
 - **Open-questions:** _(none)_

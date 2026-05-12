@@ -96,7 +96,7 @@ If they return CRITICAL or fail their thresholds, fix in place. Do not pass the 
 
 - Commit message: imperative, ≤72 chars, prefixed by area (`feat(frontend): ...`, `fix(backend): ...`).
 - Commit AFTER self-eval is green and BEFORE invoking the Evaluator.
-- Never `git push`. Never `--no-verify`. Never `git commit --amend` once a commit has been handed to the Evaluator.
+- Never `git push origin main` (any form). Never force-push. Push to non-default branches and PR creation are permitted per ADR-0005 — see `AGENTS.md` §8.7 for the full matrix and recipe. Never `--no-verify`. Never `git commit --amend` once a commit has been handed to the Evaluator.
 
 Handoff envelope to Evaluator:
 
