@@ -249,17 +249,20 @@ describe("DraftPage (FE-003: latency UX tiers)", () => {
       elapsedMs: 1500,
     });
     expect(screen.getByLabelText("生成中")).toBeInTheDocument();
-    expect(screen.queryByText("ローカルモデル応答待ち…")).toBeNull();
+    // INF-006: hint tier の文言は 3000ms 未満では表示されない
+    expect(screen.queryByText(/生成中 \(経過/)).toBeNull();
   });
 
-  it("generating かつ elapsedMs >= 3000: スケルトン + ヒントが表示される (hint tier)", async () => {
+  it("generating かつ elapsedMs >= 3000: スケルトン + ヒント + 進捗バーが表示される (hint tier)", async () => {
     await renderPage({
       status: "generating",
       clinicalInput: "入力済み",
       elapsedMs: 5000,
     });
     expect(screen.getByLabelText("生成中")).toBeInTheDocument();
-    expect(screen.getByText("ローカルモデル応答待ち…")).toBeInTheDocument();
+    // INF-006: 経過時間 + 目安時間 + 進捗バー
+    expect(screen.getByText(/生成中 \(経過 5秒 \/ 通常 3-5 分かかります\)/)).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "生成進捗 (目安)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "キャンセル" })).toBeNull();
   });
 
@@ -270,8 +273,19 @@ describe("DraftPage (FE-003: latency UX tiers)", () => {
       elapsedMs: 12000,
     });
     expect(screen.getByLabelText("生成中")).toBeInTheDocument();
-    expect(screen.getByText("ローカルモデル応答待ち…")).toBeInTheDocument();
+    expect(screen.getByText(/生成中 \(経過 12秒 \/ 通常 3-5 分かかります\)/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "キャンセル" })).toBeInTheDocument();
+  });
+
+  it("generating かつ elapsedMs >= 60000: 経過時間が「1分N秒」形式で表示される (INF-006)", async () => {
+    await renderPage({
+      status: "generating",
+      clinicalInput: "入力済み",
+      elapsedMs: 65000,
+    });
+    expect(screen.getByText(/生成中 \(経過 1分5秒 \/ 通常 3-5 分かかります\)/)).toBeInTheDocument();
+    // 65,000 / 240,000 = 27.08% → Math.floor → 27
+    expect(screen.getByText("だいたい 27%")).toBeInTheDocument();
   });
 
   it("success 状態: AIIndicatedText で下書き内容が表示される", async () => {

@@ -7,6 +7,13 @@ export const LATENCY_SKELETON_MS = 1000;
 export const LATENCY_HINT_MS = 3000;
 export const LATENCY_CANCEL_MS = 10000;
 
+/**
+ * 下書き生成の目安完了時間 (ms)。
+ * CPU 推論実測 (Playwright 再現 2026-05-13): 4-5 分。中央値 4 分 = 240,000ms を 100% とするバー表示に使用。
+ * SPEC ≤6s の budget は CPU バックエンドでは届かないため、UX 上は実測ベースの目安に切り替える (INF-006)。
+ */
+export const DRAFT_GENERATION_ETA_MS = 240_000;
+
 /** API ベース URL — 環境変数から読み取る */
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
