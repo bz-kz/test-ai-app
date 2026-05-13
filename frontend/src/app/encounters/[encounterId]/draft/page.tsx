@@ -40,6 +40,7 @@ import {
   LATENCY_CANCEL_MS,
 } from "@/lib/constants";
 import Button from "@/components/atoms/Button";
+import BackButton from "@/components/atoms/BackButton";
 import Cursor from "@/components/atoms/Cursor";
 import TextArea from "@/components/atoms/TextArea";
 import FormField from "@/components/molecules/FormField";
@@ -252,6 +253,9 @@ export default function DraftPage({ params }: DraftPageProps) {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
+      <nav className="mb-6">
+        <BackButton label="← 受診詳細に戻る" />
+      </nav>
       <h1 className="mb-6 font-display text-2xl font-bold text-navy">カルテ下書き生成</h1>
 
       {/* 確定済みモードおよびローディング中は入力フォームを隠す */}
