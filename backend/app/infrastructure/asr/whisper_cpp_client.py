@@ -262,7 +262,9 @@ class WhisperCppLocalASRClient:
         )
 
         # WAV 以外のフォーマットを whisper-server が受け付けるよう PCM WAV に変換する (BE-016)
+        ffmpeg_start = time.monotonic()
         wav_bytes = await _transcode_to_wav(audio.audio_bytes, audio.content_type)
+        ffmpeg_elapsed = time.monotonic() - ffmpeg_start
         # 元の音声バイト列への参照を解放し GC に回収させる
         del audio
 
@@ -275,6 +277,7 @@ class WhisperCppLocalASRClient:
             "response_format": "json",
         }
 
+        whisper_start = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=self._timeout_s) as client:
                 resp = await client.post(
@@ -283,18 +286,47 @@ class WhisperCppLocalASRClient:
                     data=data,
                 )
         except httpx.TimeoutException as exc:
+            whisper_elapsed = time.monotonic() - whisper_start
+            logger.info(
+                "transcribe timeout: model=%s audio_length=%d "
+                "ffmpeg_transcode_s=%.2f whisper_inference_s=%.2f",
+                self._model,
+                audio_len,
+                ffmpeg_elapsed,
+                whisper_elapsed,
+            )
             raise ASRError(
                 "transcribe timed out",
                 audio_length=audio_len,
                 timeout=True,
             ) from exc
         except httpx.HTTPError as exc:
+            whisper_elapsed = time.monotonic() - whisper_start
+            logger.info(
+                "transcribe http_error: model=%s audio_length=%d "
+                "ffmpeg_transcode_s=%.2f whisper_inference_s=%.2f kind=%s",
+                self._model,
+                audio_len,
+                ffmpeg_elapsed,
+                whisper_elapsed,
+                type(exc).__name__,
+            )
             raise ASRError(
                 f"transcribe HTTP error: {type(exc).__name__}",
                 audio_length=audio_len,
             ) from exc
+        whisper_elapsed = time.monotonic() - whisper_start
 
         if resp.status_code != 200:
+            logger.info(
+                "transcribe non_200: model=%s audio_length=%d "
+                "ffmpeg_transcode_s=%.2f whisper_inference_s=%.2f status=%d",
+                self._model,
+                audio_len,
+                ffmpeg_elapsed,
+                whisper_elapsed,
+                resp.status_code,
+            )
             raise ASRError(
                 f"transcribe returned non-200: {resp.status_code}",
                 audio_length=audio_len,
@@ -307,6 +339,14 @@ class WhisperCppLocalASRClient:
         # whisper-server は音声デコード失敗時も HTTP 200 で {"text": ""} を返す (BE-016)
         # 空テキストはデコード失敗と同義のため ASRError に変換して 503 を返す
         if not text:
+            logger.info(
+                "transcribe empty_text: model=%s audio_length=%d "
+                "ffmpeg_transcode_s=%.2f whisper_inference_s=%.2f",
+                self._model,
+                audio_len,
+                ffmpeg_elapsed,
+                whisper_elapsed,
+            )
             raise ASRError(
                 "transcribe returned empty text (likely audio decode failure)",
                 audio_length=audio_len,
@@ -317,7 +357,16 @@ class WhisperCppLocalASRClient:
         duration_ms: float | None = body.get("duration") or body.get("duration_ms")
         duration_seconds: float | None = (duration_ms / 1000.0) if duration_ms is not None else None
 
-        # トランスクリプト本文はログに書かない; 長さのみ記録する
+        # PHI 規則: INFO ログには長さと経過時間のみ。トランスクリプト本文は debug のみ。
+        logger.info(
+            "transcribe done: model=%s audio_length=%d text_length=%d "
+            "ffmpeg_transcode_s=%.2f whisper_inference_s=%.2f",
+            self._model,
+            audio_len,
+            len(text),
+            ffmpeg_elapsed,
+            whisper_elapsed,
+        )
         logger.debug(
             "transcribe response: model=%s text_length=%d duration_s=%s",
             self._model,
@@ -366,33 +415,48 @@ class WhisperCppLocalASRClient:
         )
 
         # (1) 16kHz PCM WAV にトランスコード (BE-016 再利用)
+        ffmpeg_start = time.monotonic()
         wav_bytes = await _transcode_to_wav(audio.audio_bytes, audio.content_type)
+        ffmpeg_elapsed = time.monotonic() - ffmpeg_start
         del audio  # 元の音声バイト列への参照を解放
 
         # (2) chunk_seconds 単位に WAV を分割
+        slice_start = time.monotonic()
         chunks = _slice_wav_to_chunks(wav_bytes, self._stream_chunk_seconds)
+        slice_elapsed = time.monotonic() - slice_start
         del wav_bytes  # WAV 全体への参照を解放
         n = len(chunks)
 
         logger.info(
-            "stream_transcribe: model=%s chunk_count=%d",
+            "stream_transcribe: model=%s chunk_count=%d ffmpeg_transcode_s=%.2f chunk_slice_s=%.2f",
             self._model,
             n,
+            ffmpeg_elapsed,
+            slice_elapsed,
         )
 
         # (3) 各チャンクを逐次 POST して yield する
         assembled_parts: list[str] = []
         start_time = time.monotonic()
+        ttft_s: float | None = None
+        whisper_inference_total_s = 0.0
 
         for i, chunk_wav in enumerate(chunks):
+            chunk_post_start = time.monotonic()
             text = await self._post_chunk_to_whisper(chunk_wav, p, i, audio_len)
+            chunk_post_elapsed = time.monotonic() - chunk_post_start
+            whisper_inference_total_s += chunk_post_elapsed
+            # 最初の文字起こし結果を返したタイミングを TTFT として記録する
+            if ttft_s is None:
+                ttft_s = time.monotonic() - start_time
             assembled_parts.append(text)
-            # チャンクテキストはログに書かない; 長さのみ記録する
-            logger.debug(
-                "stream_transcribe chunk %d/%d: text_length=%d",
+            # チャンクテキストはログに書かない; 長さと経過時間のみ記録する
+            logger.info(
+                "stream_transcribe chunk %d/%d: text_length=%d whisper_inference_s=%.2f",
                 i,
                 n,
                 len(text),
+                chunk_post_elapsed,
             )
             yield TranscribeChunk(
                 text=text,
@@ -405,10 +469,16 @@ class WhisperCppLocalASRClient:
         elapsed = time.monotonic() - start_time
         full_text = "".join(assembled_parts)
         logger.info(
-            "stream_transcribe done: model=%s chunk_count=%d duration_s=%.1f",
+            "stream_transcribe done: model=%s chunk_count=%d duration_s=%.2f "
+            "ffmpeg_transcode_s=%.2f chunk_slice_s=%.2f "
+            "whisper_inference_total_s=%.2f ttft_s=%.2f",
             self._model,
             n,
             elapsed,
+            ffmpeg_elapsed,
+            slice_elapsed,
+            whisper_inference_total_s,
+            ttft_s if ttft_s is not None else -1.0,
         )
         yield TranscribeChunk(
             text=full_text,

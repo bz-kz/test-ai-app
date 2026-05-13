@@ -17,12 +17,12 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 - **Database:** PostgreSQL (compose service `postgres`, internal-only).
 - **LLM:** Local Gemma 4 E4B served by Ollama (compose service `llm`, internal-only). Single tier — Ollama tag `gemma4:e4b`. Hosted-LLM SDKs are forbidden — see `.claude/rules/local-llm-and-phi.md`.
 - **Infra:** Single `docker-compose.yml` runs frontend, backend, postgres, llm on a developer's local machine. See `docs/runbook-local-dev.md`.
-- **Language:** Human chat in JP. Docs in EN (token saving, less drift). Code identifiers in EN. UI strings in JP. Code comments in JP, only when explaining the _why_.
+- **Language:** UI strings in JP. Code comments in JP. (General language / comment-philosophy rules live in `~/.claude/CLAUDE.md`.)
 
 ## 3. Core Principles
 
-- **Efficiency:** Show code first. Minimal prose. Use Opus only for Planner/Evaluator and complex design.
-- **Reliability:** Strict type safety (no `any`, no untyped dicts at boundaries). DDD on backend, Atomic Design + Onion on frontend.
+- **Efficiency:** Use Opus only for Planner/Evaluator and complex design. (General "show code first / minimal prose" lives in `~/.claude/CLAUDE.md`.)
+- **Reliability:** DDD on backend, Atomic Design + Onion on frontend. (General strict-type-safety rule lives in `~/.claude/CLAUDE.md`.)
 - **Harness Flow:**
   1. Read `SPEC.md` (root + sub) and `TASKS.md` for the current task Block.
   2. Implement one Block at a time.
@@ -36,7 +36,7 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 - **Compose:** `docker compose up -d` | `docker compose ps --status running` | `docker compose logs -f <svc>`
 - **Frontend:** `cd frontend && npm run dev` | `npm run build` | `npx tsc --noEmit` | `npx eslint .` | `npm test -- --run`
 - **Backend:** `cd backend && uvicorn main:app --reload` | `pyright` | `ruff check .` | `pytest -q`
-- **Git:** `git log --oneline -n 5` at session start to sync state. `main` is GitHub-protected — agents never push to `main` and never merge PRs; pushing feature branches and opening PRs via `gh pr create` is permitted (see `AGENTS.md` §8.2).
+- **Git:** See `AGENTS.md` §8 for commit / push / PR rules (push-to-main forbidden, agent push to non-default branches + PR creation permitted per ADR-0005). General session-start `git log` hygiene lives in `~/.claude/CLAUDE.md`.
 
 ## 5. Coding Standards
 
@@ -48,7 +48,7 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 
 ### Backend (DDD + FastAPI)
 
-- Layers: `app/domain → app/usecases → app/infrastructure → app/interfaces`. Direction enforced (see `backend/SPEC.md#layer-boundaries`).
+- Layers: `app/domain → app/usecases → app/infrastructure → app/interfaces`. Direction enforced per `.claude/rules/architecture-layer-direction.md` (binding). See also `backend/SPEC.md#layer-boundaries` for elaboration.
 - Validation: Pydantic models for every Request/Response body.
 - Inference: only via `app/infrastructure/llm/` (`LocalLLMClient`).
 
@@ -70,19 +70,21 @@ Per-task gates live in `docs/dod-and-gates.md`. Summary:
 
 ## 8. Harness Reference Index
 
-| Artefact            | Path                                 |
-| ------------------- | ------------------------------------ |
-| Project Spec (root) | `SPEC.md`                            |
-| Frontend Spec       | `frontend/SPEC.md`                   |
-| Backend Spec        | `backend/SPEC.md`                    |
-| Cross-agent rules   | `AGENTS.md`                          |
-| ADR index           | `NOTES.md`                           |
-| ADR template        | `docs/adr/0000-template.md`          |
-| Handoff contract    | `docs/handoff-contract.md`           |
-| DoD & gates         | `docs/dod-and-gates.md`              |
-| Local-dev runbook   | `docs/runbook-local-dev.md`          |
-| PHI/LLM rule        | `.claude/rules/local-llm-and-phi.md` |
-| Design system       | `DESIGN.md`                          |
+| Artefact            | Path                                            |
+| ------------------- | ----------------------------------------------- |
+| Project Spec (root) | `SPEC.md`                                       |
+| Frontend Spec       | `frontend/SPEC.md`                              |
+| Backend Spec        | `backend/SPEC.md`                               |
+| Cross-agent rules   | `AGENTS.md`                                     |
+| ADR index           | `NOTES.md`                                      |
+| ADR template        | `docs/adr/0000-template.md`                     |
+| Handoff contract    | `docs/handoff-contract.md`                      |
+| DoD & gates         | `docs/dod-and-gates.md`                         |
+| Local-dev runbook   | `docs/runbook-local-dev.md`                     |
+| PHI/LLM rule        | `.claude/rules/local-llm-and-phi.md`            |
+| Architecture layers | `.claude/rules/architecture-layer-direction.md` |
+| Local deployment    | `.claude/rules/local-deployment-discipline.md`  |
+| Design system       | `DESIGN.md`                                     |
 
 ## 9. Known issues to surface to the human
 

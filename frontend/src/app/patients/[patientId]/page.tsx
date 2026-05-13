@@ -15,6 +15,7 @@ import { usePatientDetail } from "@/hooks/usePatientDetail";
 import { useCreateEncounter } from "@/hooks/useCreateEncounter";
 import Input from "@/components/atoms/Input";
 import Button from "@/components/atoms/Button";
+import BackButton from "@/components/atoms/BackButton";
 
 type Params = { patientId: string };
 
@@ -74,6 +75,9 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
   if (status === "loading" || status === "idle") {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <nav className="mb-6">
+          <BackButton label="← 患者検索に戻る" />
+        </nav>
         <p className="text-center text-slate">読み込み中…</p>
       </main>
     );
@@ -82,6 +86,9 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
   if (status === "not_found") {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <nav className="mb-6">
+          <BackButton label="← 患者検索に戻る" />
+        </nav>
         <p className="text-center text-slate">患者が見つかりません</p>
       </main>
     );
@@ -90,6 +97,9 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
   if (status === "error" || patient === null) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <nav className="mb-6">
+          <BackButton label="← 患者検索に戻る" />
+        </nav>
         <p className="text-center text-error" role="alert">
           患者情報の取得に失敗しました
         </p>
@@ -118,9 +128,7 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <nav className="mb-6">
-        <Link href="/patients" className="text-sm text-sage hover:underline">
-          ← 患者検索に戻る
-        </Link>
+        <BackButton label="← 患者検索に戻る" />
       </nav>
 
       {/* 患者カード */}

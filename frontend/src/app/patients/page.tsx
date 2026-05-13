@@ -11,12 +11,16 @@
 import Link from "next/link";
 import { useMrnSearch } from "@/hooks/useMrnSearch";
 import MrnSearchField from "@/components/molecules/MrnSearchField";
+import BackButton from "@/components/atoms/BackButton";
 
 export default function PatientsPage() {
   const { query, setQuery, status, result } = useMrnSearch();
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
+      <nav className="mb-6">
+        <BackButton label="← ホームに戻る" />
+      </nav>
       <h1 className="mb-6 font-display text-2xl font-bold text-navy">患者検索</h1>
 
       <form onSubmit={(e) => e.preventDefault()} aria-label="患者検索フォーム">

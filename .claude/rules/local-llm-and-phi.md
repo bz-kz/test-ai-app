@@ -18,7 +18,7 @@ This rule is non-negotiable. It binds every agent (Planner, Generator, Evaluator
 - `app/domain/` MUST NOT import from `app/infrastructure/`. Domain stays inference-free.
 - `app/usecases/` is the only layer that may construct or invoke an `LocalLLMClient`.
 - All ASR calls go through `app/infrastructure/asr/`. The class implementing the call is `LocalASRClient` (interface) with a concrete
-`WhisperCppLocalASRClient` and a test-only `FakeLocalASRClient`. A direct `httpx.post("http://asr:...")` outside `app/infrastructure/asr/` is a G7 architecture failure even if functionally correct.
+  `WhisperCppLocalASRClient` and a test-only `FakeLocalASRClient`. A direct `httpx.post("http://asr:...")` outside `app/infrastructure/asr/` is a G7 architecture failure even if functionally correct.
 - A direct `httpx.post("http://llm:...")` outside `app/infrastructure/llm/` is a G7 architecture failure even if functionally correct.
 
 ## 3. PHI in prompts
@@ -36,6 +36,10 @@ PHI = any of: patient name, MRN, DOB, address, phone, free-text clinical narrati
 - PHI persisted in Postgres uses the same masked-on-read path for analytic queries. Operational reads stay unmasked but are gated by usecase-level authorisation.
 - HTTP responses to the frontend MUST NOT include PHI fields the caller has not explicitly requested. Default-deny on serializer fields.
 - The frontend MUST NOT write PHI to `localStorage`, `sessionStorage`, or IndexedDB. Memory only.
+- **PHI-bearing buffers and accumulators MUST live in `useRef`** (or equivalent stable, non-snapshot storage) — not `useState`. Examples: audio Blob, chunked partial transcripts, accumulated SSE chunks before completion, streaming-draft buffer before final `setDraft`. React DevTools' Hooks Inspector captures `useState` values in real time; `useRef` is intentionally outside React's reconciliation snapshot. (ADR-0004)
+- **Counters, status flags, and structural metadata MAY live in `useState`** because they contain no PHI: `chunkIndex: number`, `chunkCount: number | null`, `status: "uploading" | "success" | ...`, `elapsedMs: number`.
+- When a component needs to **display** the buffered PHI content, the rendered string MUST be derived at render time from the `useRef` content. Typical pattern: `useState<number>` tick counter incremented per chunk arrival forces a re-render; the component reads `ref.current.join("")` on every render.
+- **Backend buffers:** PHI bytes/text MUST NOT be added to long-lived dataclasses or attribute slots accessible via `repr`/`str`. Use locally-scoped `list[str]` or `bytearray` inside the function scope and explicitly drop the reference when the stream completes.
 
 ## 5. Refusal triggers for agents
 
