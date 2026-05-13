@@ -16,6 +16,7 @@ import { useCreateEncounter } from "@/hooks/useCreateEncounter";
 import Input from "@/components/atoms/Input";
 import Button from "@/components/atoms/Button";
 import BackButton from "@/components/atoms/BackButton";
+import { CONFIRMATION_AUTO_HIDE_MS } from "@/lib/constants";
 
 type Params = { patientId: string };
 
@@ -42,13 +43,13 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
       load(patientId);
       createEnc.reset();
 
-      // 2s 後に確認メッセージを非表示にする
+      // 一定時間後に確認メッセージを非表示にする (CONFIRMATION_AUTO_HIDE_MS)
       if (confirmTimerRef.current) {
         clearTimeout(confirmTimerRef.current);
       }
       confirmTimerRef.current = setTimeout(() => {
         setShowConfirmation(false);
-      }, 2000);
+      }, CONFIRMATION_AUTO_HIDE_MS);
     }
     // createEnc.reset は useCallback の安定した参照のため依存に含める
     // eslint-disable-next-line react-hooks/exhaustive-deps

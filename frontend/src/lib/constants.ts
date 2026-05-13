@@ -60,3 +60,9 @@ export const ASR_STREAMING_ENABLED = process.env.NEXT_PUBLIC_ASR_STREAMING_ENABL
 
 /** ADR-0003 ストリーミング: 最初のチャンク可視フィードバック目標 (ms) */
 export const ASR_STREAM_FIRST_CHUNK_MS = 25000;
+
+/**
+ * 操作成功メッセージの自動非表示までのミリ秒。
+ * 例: 「✓ 受診を追加しました」を一定時間後に非表示にする。
+ */
+export const CONFIRMATION_AUTO_HIDE_MS = 2000;

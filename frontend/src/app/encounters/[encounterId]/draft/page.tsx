@@ -33,114 +33,21 @@ import { useCorrectFinal } from "@/hooks/useCorrectFinal";
 import { useEncounterDrafts } from "@/hooks/useEncounterDrafts";
 import { useEncounterFinals } from "@/hooks/useEncounterFinals";
 import { useFinalChain } from "@/hooks/useFinalChain";
-import {
-  LATENCY_SPINNER_MS,
-  LATENCY_SKELETON_MS,
-  LATENCY_HINT_MS,
-  LATENCY_CANCEL_MS,
-} from "@/lib/constants";
+import { LATENCY_SPINNER_MS } from "@/lib/constants";
 import Button from "@/components/atoms/Button";
 import BackButton from "@/components/atoms/BackButton";
-import Cursor from "@/components/atoms/Cursor";
 import TextArea from "@/components/atoms/TextArea";
 import FormField from "@/components/molecules/FormField";
-import AIIndicatedText from "@/components/molecules/AIIndicatedText";
-import ConfidencePill from "@/components/molecules/ConfidencePill";
-import ChainList from "@/components/molecules/ChainList";
 import VoiceCapture from "@/components/molecules/VoiceCapture";
+import DraftGeneratingIndicator from "./_sections/DraftGeneratingIndicator";
+import DraftViewSection from "./_sections/DraftViewSection";
+import DraftEditingSection from "./_sections/DraftEditingSection";
+import DraftFinalizedSection from "./_sections/DraftFinalizedSection";
 import type { RecordFinal } from "@/types/recordFinal";
 
 interface DraftPageProps {
   // Next.js 15 では params は Promise として提供される
   params: Promise<{ encounterId: string }>;
-}
-
-/** 再生成アイコン (リフレッシュ) — インライン SVG */
-function RefreshIcon() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path
-        d="M12.5 2.5A6 6 0 1 1 7 1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path d="M7 1l2 2-2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** 編集アイコン (鉛筆) — インライン SVG */
-function PencilIcon() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path
-        d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** 承認アイコン (チェック) — インライン SVG */
-function CheckIcon() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path
-        d="M2 7l3.5 3.5L12 4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** 錠前アイコン (確定済みバッジ用) — インライン SVG */
-function LockIcon() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <rect x="2.5" y="6.5" width="9" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 export default function DraftPage({ params }: DraftPageProps) {
@@ -317,45 +224,12 @@ export default function DraftPage({ params }: DraftPageProps) {
 
         {/* generating: レイテンシ UX 階層 */}
         {!isInitialLoading && isGenerating && (
-          <div>
-            {/* ストリーミング中かつチャンクが届き始めていればテキストを表示する。
-                チャンクが届く前はスケルトン階層 (1000ms 以上) でフォールバックする。
-                DESIGN.md: ストリーミングテキストの隣にキャレットカーソルを表示する。
-                スピナーとキャレットは同時に表示しない。 */}
-            {isStreaming && streamingText !== "" ? (
-              <AIIndicatedText>
-                <pre className="whitespace-pre-wrap font-body text-sm text-navy">
-                  {streamingText}
-                  <Cursor />
-                </pre>
-              </AIIndicatedText>
-            ) : (
-              <>
-                {/* 1000ms 以上: スケルトン (チャンク未到着時のフォールバック) */}
-                {elapsedMs >= LATENCY_SKELETON_MS && (
-                  <div className="space-y-3" role="status" aria-label="生成中">
-                    <div className="h-4 animate-pulse rounded bg-slate-100" />
-                    <div className="h-4 w-5/6 animate-pulse rounded bg-slate-100" />
-                    <div className="h-4 w-4/6 animate-pulse rounded bg-slate-100" />
-                  </div>
-                )}
-
-                {/* 3000ms 以上: ヒントテキスト */}
-                {elapsedMs >= LATENCY_HINT_MS && (
-                  <p className="mt-3 text-sm text-slate">ローカルモデル応答待ち…</p>
-                )}
-              </>
-            )}
-
-            {/* 10000ms 以上: キャンセルボタン (ストリーミング中も表示する) */}
-            {elapsedMs >= LATENCY_CANCEL_MS && (
-              <div className="mt-4">
-                <Button variant="secondary" size="sm" onClick={cancel}>
-                  キャンセル
-                </Button>
-              </div>
-            )}
-          </div>
+          <DraftGeneratingIndicator
+            isStreaming={isStreaming}
+            streamingText={streamingText}
+            elapsedMs={elapsedMs}
+            onCancel={cancel}
+          />
         )}
 
         {/* success + view モード: AI 下書き表示 + アクションボタン */}
@@ -363,201 +237,22 @@ export default function DraftPage({ params }: DraftPageProps) {
           status === "success" &&
           draft !== null &&
           lifecycle.mode === "view" && (
-            <div>
-              {/* ConfidencePill — confidence ≤ 0.5 のとき warning バリアント */}
-              {draft.confidence !== null && (
-                <div className="mb-3">
-                  <ConfidencePill confidence={draft.confidence} />
-                </div>
-              )}
-
-              <AIIndicatedText>
-                {/* SOAP 形式の改行を段落として表示する */}
-                <pre className="whitespace-pre-wrap font-body text-sm text-navy">
-                  {draft.content}
-                </pre>
-              </AIIndicatedText>
-
-              {/* アクションボタン: 再生成 / 編集 / 承認 (固定順序 per frontend/SPEC.md#ai-output-patterns) */}
-              <div className="mt-4 flex items-center gap-3">
-                {/* 再生成 — FE-008 のストリーミングパスで再実行する */}
-                <Button variant="secondary" size="sm" onClick={generateStream}>
-                  <RefreshIcon />
-                  再生成
-                </Button>
-
-                {/* 編集 — lifecycle.enterEditMode() を呼び出す */}
-                <Button variant="ghost" size="sm" onClick={lifecycle.enterEditMode}>
-                  <PencilIcon />
-                  編集
-                </Button>
-
-                {/* 承認 — lifecycle.approve() を呼び出す */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={lifecycle.status === "finalizing"}
-                  disabled={lifecycle.status === "finalizing"}
-                  onClick={() => void lifecycle.approve()}
-                >
-                  <CheckIcon />
-                  承認
-                </Button>
-              </div>
-
-              {/* 承認エラーメッセージ */}
-              {lifecycle.status === "error" && lifecycle.error !== null && (
-                <p className="mt-3 text-sm text-error" role="alert">
-                  {lifecycle.error}
-                </p>
-              )}
-            </div>
+            <DraftViewSection draft={draft} lifecycle={lifecycle} onRegenerate={generateStream} />
           )}
 
         {/* success + editing モード: テキストエリア編集 */}
         {!isInitialLoading &&
           status === "success" &&
           draft !== null &&
-          lifecycle.mode === "editing" && (
-            <div>
-              <FormField id="edit-content" label="下書き編集">
-                <TextArea
-                  id="edit-content"
-                  value={lifecycle.editContent}
-                  onChange={(e) => lifecycle.setEditContent(e.target.value)}
-                  rows={8}
-                  disabled={lifecycle.status === "saving"}
-                />
-              </FormField>
-
-              <div className="mt-4 flex items-center gap-3">
-                {/* キャンセル */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={lifecycle.cancelEdit}
-                  disabled={lifecycle.status === "saving"}
-                >
-                  キャンセル
-                </Button>
-
-                {/* 更新 — editContent が空白のみの場合は無効 */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={lifecycle.status === "saving"}
-                  disabled={lifecycle.status === "saving" || lifecycle.editContent.trim() === ""}
-                  onClick={() => void lifecycle.saveEdit()}
-                >
-                  更新
-                </Button>
-              </div>
-
-              {/* 編集エラーメッセージ */}
-              {lifecycle.status === "error" && lifecycle.error !== null && (
-                <p className="mt-3 text-sm text-error" role="alert">
-                  {lifecycle.error}
-                </p>
-              )}
-            </div>
-          )}
+          lifecycle.mode === "editing" && <DraftEditingSection lifecycle={lifecycle} />}
 
         {/* finalized モード: 確定済み表示 + 訂正フロー */}
         {!isInitialLoading && lifecycle.mode === "finalized" && currentFinal !== null && (
-          <div>
-            {/* 確定済みバッジ — 不変性を示す視覚的キュー */}
-            <div className="mb-4 flex items-center gap-2">
-              <span
-                className="inline-flex items-center gap-1.5 rounded-sm bg-success/10 px-3 py-1 text-xs font-medium text-[#16A34A]"
-                role="status"
-                aria-label="確定済みカルテ"
-              >
-                <LockIcon />
-                確定済み
-              </span>
-            </div>
-
-            {/* 訂正モード: TextArea + キャンセル / 更新ボタン */}
-            {correction.mode === "correcting" && (
-              <div>
-                <FormField id="correct-content" label="訂正内容">
-                  <TextArea
-                    id="correct-content"
-                    value={correction.content}
-                    onChange={(e) => correction.setContent(e.target.value)}
-                    rows={8}
-                    disabled={correction.status === "submitting"}
-                  />
-                </FormField>
-
-                <div className="mt-4 flex items-center gap-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={correction.cancel}
-                    disabled={correction.status === "submitting"}
-                  >
-                    キャンセル
-                  </Button>
-
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    loading={correction.status === "submitting"}
-                    disabled={
-                      correction.status === "submitting" || correction.content.trim() === ""
-                    }
-                    onClick={() => void correction.submit()}
-                  >
-                    更新
-                  </Button>
-                </div>
-
-                {/* 訂正エラーメッセージ */}
-                {correction.status === "error" && correction.error !== null && (
-                  <p className="mt-3 text-sm text-error" role="alert">
-                    {correction.error}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* view モード: 確定カルテ本文 + 訂正ボタン */}
-            {correction.mode === "view" && (
-              <div>
-                {/* confidence が設定されている場合は ConfidencePill を表示する */}
-                {currentFinal.confidence !== null && (
-                  <div className="mb-3">
-                    <ConfidencePill confidence={currentFinal.confidence} />
-                  </div>
-                )}
-
-                {/* 確定カルテ本文 — ariaLabel で "確定カルテ" とアナウンスする (FE-005 fix #1) */}
-                <AIIndicatedText label="確定カルテ" ariaLabel="確定カルテ">
-                  <pre className="whitespace-pre-wrap font-body text-sm text-navy">
-                    {currentFinal.content}
-                  </pre>
-                </AIIndicatedText>
-
-                {/* 訂正ボタン */}
-                <div className="mt-4">
-                  <Button variant="secondary" size="sm" onClick={correction.enter}>
-                    <PencilIcon />
-                    訂正
-                  </Button>
-                </div>
-
-                {/* FE-006: 訂正履歴チェーン */}
-                {finalChain.status === "loading" && (
-                  <p className="mt-4 text-sm text-slate">訂正履歴を読み込み中…</p>
-                )}
-                {(finalChain.status === "error" || finalChain.status === "not_found") && (
-                  <p className="mt-4 text-sm text-slate">訂正履歴を取得できませんでした。</p>
-                )}
-                {finalChain.status === "loaded" && <ChainList chain={finalChain.chain} />}
-              </div>
-            )}
-          </div>
+          <DraftFinalizedSection
+            currentFinal={currentFinal}
+            correction={correction}
+            finalChain={finalChain}
+          />
         )}
 
         {/* encounter_not_found */}
