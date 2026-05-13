@@ -169,7 +169,7 @@ Forbidden (mirrors §8.2 additions):
 
 Recipe lives in `.claude/skills/git-pr-flow/SKILL.md`. PR body template lives in `.claude/skills/pr-body-template/SKILL.md` (skill form) and `.github/pull_request_template.md` (GitHub auto-fill). Hard rules above are canonical; the skills are recipe-only.
 
-Branch strategy default: feature-class Blocks (`feat:`, `refactor:`, `fix:` ≥3 files) get `<prefix>/<block-id>-<short-slug>` cut off `main` with a per-Block PR. Chore / docs / test Blocks batch onto the current work branch (`001-ai`-style) and PR when the branch is ready for review. Full matrix in the skill recipe.
+Branch strategy default: every Block — feature, refactor, fix, chore, docs, test — gets its own branch cut off `main` named `<NNN>-<short-slug>` (e.g. `006-refactor-tier1`, `008-discord-fetch-hook`). The legacy `001-ai`-style long-lived work branch is retired (the original `001-ai` was merged via PR #1 on 2026-05-12); do NOT reuse it as a parking spot for unrelated commits. Full matrix in the skill recipe.
 
 `gh` unavailable → fall back to surfacing the constructed PR URL and rendered body to the user; do NOT automate around a missing `gh`.
 
