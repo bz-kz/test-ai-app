@@ -19,7 +19,6 @@ PHI ルール:
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncGenerator
 from datetime import datetime
@@ -29,10 +28,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.entities import RecordDraft
 from app.domain.phi import short_id
 from app.interfaces.auth import get_current_clinician
 from app.interfaces.routers.finals import FinalRead
 from app.interfaces.schemas import ErrorResponse
+from app.interfaces.sse import sse_data_frame, sse_event_frame
 from app.usecases.di import (
     EditRecordDraftCallable,
     FinalizeDraftCallable,
@@ -86,6 +87,18 @@ class DraftRead(BaseModel):
     confidence: float | None
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def from_entity(cls, draft: RecordDraft) -> DraftRead:
+        """ドメインエンティティから API レスポンスを構築する。"""
+        return cls(
+            id=draft.id,
+            encounter_id=draft.encounter_id,
+            content=draft.content,
+            confidence=draft.confidence,
+            created_at=draft.created_at,
+            updated_at=draft.updated_at,
+        )
 
 
 class DraftEdit(BaseModel):
@@ -149,14 +162,7 @@ async def post_draft(
         ) from None
     # InferenceError はキャッチしない — グローバルハンドラに委ねる
 
-    return DraftRead(
-        id=draft.id,
-        encounter_id=draft.encounter_id,
-        content=draft.content,
-        confidence=draft.confidence,
-        created_at=draft.created_at,
-        updated_at=draft.updated_at,
-    )
+    return DraftRead.from_entity(draft)
 
 
 @router.post(
@@ -233,12 +239,13 @@ async def post_draft_stream(
     async def _sse_generator() -> AsyncGenerator[bytes, None]:
         # 最初のチャンク取得時に InferenceError が来た場合は error イベントだけ送出する
         if _inference_error is not None:
-            _msg = "Inference service is temporarily unavailable."
-            error_payload = json.dumps(
-                {"code": "inference_unavailable", "message": _msg},
-                ensure_ascii=False,
+            yield sse_event_frame(
+                "error",
+                {
+                    "code": "inference_unavailable",
+                    "message": "Inference service is temporarily unavailable.",
+                },
             )
-            yield f"event: error\ndata: {error_payload}\n\n".encode()
             return
 
         # 先読みしたチャンクから開始する (None の場合はストリームをスキップ)
@@ -250,19 +257,16 @@ async def post_draft_stream(
             if current.done:
                 # done=True は completion チャンク: text に JSON ペイロードが入っている
                 # stream_record_draft が最後に yield する completion チャンク
-                event = f"event: complete\ndata: {current.text}\n\n"
-                yield event.encode()
+                yield sse_event_frame("complete", current.text)
                 break
             else:
-                payload = json.dumps(
+                yield sse_data_frame(
                     {
                         "text": current.text,
                         "done": current.done,
                         "confidence": current.confidence,
-                    },
-                    ensure_ascii=False,
+                    }
                 )
-                yield f"data: {payload}\n\n".encode()
 
             # 次のチャンクを取得する
             try:
@@ -275,12 +279,13 @@ async def post_draft_stream(
                     short_id(encounter_id),
                     exc.masked_context,
                 )
-                _msg = "Inference service is temporarily unavailable."
-                error_payload = json.dumps(
-                    {"code": "inference_unavailable", "message": _msg},
-                    ensure_ascii=False,
+                yield sse_event_frame(
+                    "error",
+                    {
+                        "code": "inference_unavailable",
+                        "message": "Inference service is temporarily unavailable.",
+                    },
                 )
-                yield f"event: error\ndata: {error_payload}\n\n".encode()
                 break
             except StopAsyncIteration:
                 break
@@ -321,14 +326,7 @@ async def get_draft_by_id(
             },
         ) from None
 
-    return DraftRead(
-        id=draft.id,
-        encounter_id=draft.encounter_id,
-        content=draft.content,
-        confidence=draft.confidence,
-        created_at=draft.created_at,
-        updated_at=draft.updated_at,
-    )
+    return DraftRead.from_entity(draft)
 
 
 @router.patch(
@@ -362,14 +360,7 @@ async def patch_draft(
             },
         ) from None
 
-    return DraftRead(
-        id=draft.id,
-        encounter_id=draft.encounter_id,
-        content=draft.content,
-        confidence=draft.confidence,
-        created_at=draft.created_at,
-        updated_at=draft.updated_at,
-    )
+    return DraftRead.from_entity(draft)
 
 
 @router.post(
@@ -414,12 +405,4 @@ async def post_finalize_draft(
             },
         ) from None
 
-    return FinalRead(
-        id=final.id,
-        encounter_id=final.encounter_id,
-        content=final.content,
-        confidence=final.confidence,
-        clinician_id=final.clinician_id,
-        predecessor_id=final.predecessor_id,
-        created_at=final.created_at,
-    )
+    return FinalRead.from_entity(final)

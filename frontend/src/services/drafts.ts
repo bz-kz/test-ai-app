@@ -36,12 +36,6 @@ export type FinalizeDraftResult =
   | { kind: "validation_error"; fields: string[] }
   | { kind: "error" };
 
-/** getRecordFinalById の戻り値型 */
-export type GetFinalResult =
-  | { kind: "found"; final: RecordFinal }
-  | { kind: "not_found" }
-  | { kind: "error" };
-
 /**
  * カルテ下書きを生成する。
  *
@@ -416,40 +410,5 @@ export async function streamRecordDraft(
       throw err;
     }
     opts.onError({ kind: "error" });
-  }
-}
-
-/**
- * 確定カルテを ID で取得する (GET /finals/{finalId})。
- *
- * - 成功: `{ kind: "found", final }`
- * - 見つからない: `{ kind: "not_found" }`
- * - その他エラー: `{ kind: "error" }`
- *
- * @param finalId  確定カルテ UUID
- * @param opts  AbortSignal など
- */
-export async function getRecordFinalById(
-  finalId: string,
-  opts?: { signal?: AbortSignal }
-): Promise<GetFinalResult> {
-  const path = `/finals/${encodeURIComponent(finalId)}`;
-
-  const result = await apiFetch<RecordFinal>(path, {
-    method: "GET",
-    signal: opts?.signal,
-  });
-
-  switch (result.kind) {
-    case "ok":
-      return { kind: "found", final: result.data };
-
-    case "not_found":
-      return { kind: "not_found" };
-
-    case "validation_error":
-    case "server_error":
-    case "network_error":
-      return { kind: "error" };
   }
 }

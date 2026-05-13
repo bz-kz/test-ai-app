@@ -18,7 +18,6 @@ PHI ルール:
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncGenerator
 from uuid import UUID
@@ -30,6 +29,7 @@ from pydantic import BaseModel
 from app.domain.phi import mask_phi, short_id
 from app.interfaces.auth import get_current_clinician
 from app.interfaces.schemas import ErrorResponse
+from app.interfaces.sse import sse_data_frame, sse_event_frame
 from app.usecases.di import (
     AudioPayload,
     StreamTranscribeAudioCallable,
@@ -273,12 +273,8 @@ async def post_transcribe_stream(
         if _asr_error_before_stream is not None:
             _exc = _asr_error_before_stream
             code = "transcription_timeout" if _exc.timeout else "transcription_unavailable"
-            error_payload = json.dumps(
-                # SSE error フレームには code と chunk_index のみ — PHI は含めない
-                {"code": code, "chunk_index": 0},
-                ensure_ascii=False,
-            )
-            yield f"event: error\ndata: {error_payload}\n\n".encode()
+            # SSE error フレームには code と chunk_index のみ — PHI は含めない
+            yield sse_event_frame("error", {"code": code, "chunk_index": 0})
             return
 
         # 先読みしたチャンクがない場合はストリームをスキップ
@@ -291,29 +287,26 @@ async def post_transcribe_stream(
         while True:
             if current.done:
                 # done=True は完了チャンク: full_text を completion イベントとして送出する
-                completion_payload = json.dumps(
+                yield sse_event_frame(
+                    "complete",
                     {
                         "full_text": current.text,
                         "duration_seconds": None,
                         "chunk_count": current.chunk_count,
                     },
-                    ensure_ascii=False,
                 )
-                yield f"event: complete\ndata: {completion_payload}\n\n".encode()
                 break
             else:
                 # 通常チャンク: chunk_text は PHI だが呼び出し元が明示的に要求したため返却する
                 # (local-llm-and-phi.md §4 操作的読み取り)
-                chunk_payload = json.dumps(
+                yield sse_data_frame(
                     {
                         "text": current.text,
                         "chunk_index": current.chunk_index,
                         "chunk_count": current.chunk_count,
                         "done": False,
-                    },
-                    ensure_ascii=False,
+                    }
                 )
-                yield f"data: {chunk_payload}\n\n".encode()
                 last_chunk_index = current.chunk_index
 
                 # チャンクテキストは DEBUG のみ mask_phi 経由で記録する
@@ -345,11 +338,10 @@ async def post_transcribe_stream(
                     exc.masked_context,
                 )
                 code = "transcription_timeout" if exc.timeout else "transcription_unavailable"
-                error_payload = json.dumps(
+                yield sse_event_frame(
+                    "error",
                     {"code": code, "chunk_index": last_chunk_index + 1},
-                    ensure_ascii=False,
                 )
-                yield f"event: error\ndata: {error_payload}\n\n".encode()
                 break
 
     return StreamingResponse(

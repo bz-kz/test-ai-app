@@ -3,7 +3,6 @@ import {
   createRecordDraft,
   editRecordDraft,
   finalizeRecordDraft,
-  getRecordFinalById,
   listDraftsByEncounter,
   streamRecordDraft,
 } from "../drafts";
@@ -198,36 +197,6 @@ describe("listDraftsByEncounter", () => {
       `/encounters/${FAKE_ENCOUNTER_ID}/drafts`,
       expect.objectContaining({ method: "GET" })
     );
-  });
-});
-
-describe("getRecordFinalById", () => {
-  beforeEach(() => {
-    mockApiFetch.mockReset();
-  });
-
-  it("成功時: kind=found を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_FINAL });
-    const result = await getRecordFinalById(FAKE_FINAL_ID);
-    expect(result).toEqual({ kind: "found", final: FAKE_FINAL });
-  });
-
-  it("404: kind=not_found を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "not_found" });
-    const result = await getRecordFinalById(FAKE_FINAL_ID);
-    expect(result).toEqual({ kind: "not_found" });
-  });
-
-  it("server_error: kind=error を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
-    const result = await getRecordFinalById(FAKE_FINAL_ID);
-    expect(result).toEqual({ kind: "error" });
-  });
-
-  it("network_error: kind=error を返す", async () => {
-    mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
-    const result = await getRecordFinalById(FAKE_FINAL_ID);
-    expect(result).toEqual({ kind: "error" });
   });
 });
 

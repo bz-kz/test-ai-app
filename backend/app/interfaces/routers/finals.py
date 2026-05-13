@@ -23,6 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.entities import RecordFinal
 from app.interfaces.auth import get_current_clinician
 from app.interfaces.schemas import ErrorResponse
 from app.usecases.di import (
@@ -61,6 +62,19 @@ class FinalRead(BaseModel):
     clinician_id: UUID
     predecessor_id: UUID | None
     created_at: datetime
+
+    @classmethod
+    def from_entity(cls, final: RecordFinal) -> FinalRead:
+        """ドメインエンティティから API レスポンスを構築する。"""
+        return cls(
+            id=final.id,
+            encounter_id=final.encounter_id,
+            content=final.content,
+            confidence=final.confidence,
+            clinician_id=final.clinician_id,
+            predecessor_id=final.predecessor_id,
+            created_at=final.created_at,
+        )
 
 
 class FinalCorrectRequest(BaseModel):
@@ -108,15 +122,7 @@ async def get_final_by_id(
             },
         ) from None
 
-    return FinalRead(
-        id=final.id,
-        encounter_id=final.encounter_id,
-        content=final.content,
-        confidence=final.confidence,
-        clinician_id=final.clinician_id,
-        predecessor_id=final.predecessor_id,
-        created_at=final.created_at,
-    )
+    return FinalRead.from_entity(final)
 
 
 @router.post(
@@ -152,15 +158,7 @@ async def post_correct_final(
             },
         ) from None
 
-    return FinalRead(
-        id=new_final.id,
-        encounter_id=new_final.encounter_id,
-        content=new_final.content,
-        confidence=new_final.confidence,
-        clinician_id=new_final.clinician_id,
-        predecessor_id=new_final.predecessor_id,
-        created_at=new_final.created_at,
-    )
+    return FinalRead.from_entity(new_final)
 
 
 @router.get(
@@ -193,15 +191,4 @@ async def get_final_chain(
             },
         ) from None
 
-    return [
-        FinalRead(
-            id=f.id,
-            encounter_id=f.encounter_id,
-            content=f.content,
-            confidence=f.confidence,
-            clinician_id=f.clinician_id,
-            predecessor_id=f.predecessor_id,
-            created_at=f.created_at,
-        )
-        for f in chain
-    ]
+    return [FinalRead.from_entity(f) for f in chain]
