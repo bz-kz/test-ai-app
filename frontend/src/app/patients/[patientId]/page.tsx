@@ -17,6 +17,7 @@ import Input from "@/components/atoms/Input";
 import Button from "@/components/atoms/Button";
 import BackButton from "@/components/atoms/BackButton";
 import { formatJpDate, formatJpDateTime } from "@/lib/dateFormat";
+import { CONFIRMATION_AUTO_HIDE_MS } from "@/lib/constants";
 
 type Params = { patientId: string };
 
