@@ -8,7 +8,12 @@
       {
         "matcher": "Edit|Write",
         "description": "Run Prettier on the modified file to ensure consistent code formatting.",
-        "hooks": [{ "type": "command", "command": "jq -r '.tool_input.file_path' | xargs npx prettier --write" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | xargs npx prettier --write"
+          }
+        ]
       },
       {
         "matcher": "Edit|Write",
@@ -37,10 +42,37 @@
       {
         "matcher": "",
         "description": "Notify the user that Claude Code needs their attention.",
-        "hooks": [{ "type": "command", "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'"
+          }
+        ]
       }
     ],
-  "SessionStart": [
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Fetch Discord messages received since the last poll and inject them as context. See feedback_discord_confirmation_pings (Layer 4).",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/discord-poll.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Catch up on Discord messages received while no session was active. See feedback_discord_confirmation_pings (Layer 4).",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/discord-poll.sh"
+          }
+        ]
+      },
       {
         "matcher": "compact",
         "hooks": [
@@ -54,15 +86,8 @@
     ]
   },
   "permissions": {
-    "deny": [
-      "Read(./claude運用tips.md)",
-      "Read(./CLAUDE_日本語.md)"
-    ],
-    "allow": [
-      "Read(./claude/agents/*.md)",
-      "Read(**/*.md)",
-      "Write(**/*.md)"
-    ],
+    "deny": ["Read(./claude運用tips.md)", "Read(./CLAUDE_日本語.md)"],
+    "allow": ["Read(./claude/agents/*.md)", "Read(**/*.md)", "Write(**/*.md)"],
     "default": "deny",
     "enforcement": "strict"
   }
