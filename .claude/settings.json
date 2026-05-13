@@ -57,6 +57,13 @@
     "deny": [
       "Read(./claude運用tips.md)",
       "Read(./CLAUDE_日本語.md)"
-    ]
+    ],
+    "allow": [
+      "Read(./claude/agents/*.md)",
+      "Read(**/*.md)",
+      "Write(**/*.md)"
+    ],
+    "default": "deny",
+    "enforcement": "strict"
   }
 }

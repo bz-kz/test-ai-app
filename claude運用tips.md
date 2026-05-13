@@ -81,5 +81,5 @@ handoffs:
 7. Frontend Design => UIデザイン品質を底上げするスキル群(入れておくだけでいい。AIっぽいUIを避けれる。DESIGN.mdと併用が推奨)
 8. Slack => Claudeへの指示
 
-## おすすめスキル (安全で便利なもの)
-1. 
+## rules の活用
+- `.claude/rules/` にmdファイルを作ると、claudeが必要なときだけ読みにいくファイルとしてCLAUDE.mdを切り出せる。このファイルは毎回読まないので、コンテキストを節約できる
