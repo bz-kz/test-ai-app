@@ -74,12 +74,22 @@
         ]
       },
       {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "On /resume — catch up on Discord messages received while the session was suspended.",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/discord-poll.sh"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {
             "type": "command",
-            "description": "Remind the user to use Bun and run tests before committing.",
-            "command": "echo 'Reminder: use Bun, not npm. Run bun test before committing. Current sprint: auth refactor.'"
+            "description": "On context compaction — Monitor is wiped; pull any Discord messages that arrived during the gap so they aren't lost until the next UserPromptSubmit.",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/discord-poll.sh"
           }
         ]
       }
