@@ -36,7 +36,10 @@ services:
       - DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app
       - LLM_BASE_URL=http://llm:11434
       - LLM_MODEL=gemma4:e4b
-      - LLM_TIMEOUT_S=300
+      # INF-006: CPU 推論 1 件は実測 4-5 分 (Playwright 再現 2026-05-13)。
+      # 300s では非ストリーム経路が確実に切れる。600s に引き上げ
+      # (ストリーム経路は ollama_client.py で _timeout_s * 2 = 1200s)。
+      - LLM_TIMEOUT_S=600
       # ASR サービス設定 (BE-014/BE-017)
       - ASR_BASE_URL=http://asr:8080
       - ASR_MODEL=ggml-medium-q5_0.bin
@@ -88,6 +91,10 @@ services:
 
   llm:
     image: ollama/ollama:latest
+    # INF-006: gemma4:e4b は CPU で 9.4 GiB の重み + KV キャッシュで実測 10.1-10.2 GiB 使用。
+    # ホスト Docker 12.9 GiB と差が 2.7 GiB しかなく、過去に OOM kill (signal: killed) 発生 (22:17/22:25)。
+    # 明示上限により OOM の影響範囲を llm コンテナ内に閉じ、backend/postgres/asr/frontend を守る。
+    mem_limit: 11g
     environment:
       # Flash Attention は gemma4:e4b の attention カーネルを加速する。精度には影響しない。
       - OLLAMA_FLASH_ATTENTION=1
