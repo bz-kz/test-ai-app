@@ -135,7 +135,7 @@ If you skip this step the browser (or `curl`) hits the pre-build image. Symptoms
 
 - No model swap is needed; `gemma4:e4b` runs on CPU.
 - Expect ~3× slower inference vs the GPU baseline; if your features depend on the SPEC latency budget, file a temporary override Block via Planner.
-- Lower `LLM_TIMEOUT_S` floor to 90 s for `generate` if you observe spurious timeouts on first request after pull.
+- `LLM_TIMEOUT_S` is set to `300` in `docker-compose.yml` (INF-003 raised it from the 60/120 s defaults to absorb CPU-only first-token latency). Raise it further only if the first request after a fresh model pull is still timing out; never lower it below 120 s on CPU.
 
 ## Troubleshooting
 
@@ -176,7 +176,7 @@ docker compose up -d
 
 ### Inference is slow / OOM
 
-`gemma4:e4b` is the single supported model; there is no smaller tier to fall back to. Verify GPU memory pressure with `docker compose exec llm nvidia-smi`, lower the quantisation level (`Q4_0` is the project default) only via an ADR, and confirm the request body is not exceeding the prompt-length budget in `SPEC.md#inference-layer-contract`. Document any temporary mitigation as a `## Spec Pivot Request` Block.
+`gemma4:e4b` is the single supported model; there is no smaller tier to fall back to. Verify GPU memory pressure with `docker compose exec llm nvidia-smi`. The tag is loaded at its publisher-supplied default precision — the project does NOT re-quantise (see `SPEC.md#hardware-assumptions`); any quantisation change requires an ADR amending that section. Confirm the request body is not exceeding the prompt-length budget in `SPEC.md#inference-layer-contract`. Document any temporary mitigation as a `## Spec Pivot Request` Block.
 
 ### A request returned PHI in a log line
 
