@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { correctRecordFinal, getFinalChain, listFinalsByEncounter } from "../finals";
+import {
+  correctRecordFinal,
+  getFinalChain,
+  getRecordFinalById,
+  listFinalsByEncounter,
+} from "../finals";
 
 // apiFetch をモック — 実際の fetch は呼び出さない
 vi.mock("@/lib/api", () => ({
@@ -135,5 +140,35 @@ describe("getFinalChain", () => {
       `/finals/${FAKE_FINAL_ID}/chain`,
       expect.objectContaining({ method: "GET" })
     );
+  });
+});
+
+describe("getRecordFinalById", () => {
+  beforeEach(() => {
+    mockApiFetch.mockReset();
+  });
+
+  it("成功時: kind=found を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "ok", data: FAKE_FINAL });
+    const result = await getRecordFinalById(FAKE_FINAL_ID);
+    expect(result).toEqual({ kind: "found", final: FAKE_FINAL });
+  });
+
+  it("404: kind=not_found を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "not_found" });
+    const result = await getRecordFinalById(FAKE_FINAL_ID);
+    expect(result).toEqual({ kind: "not_found" });
+  });
+
+  it("server_error: kind=error を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "server_error", code: "500" });
+    const result = await getRecordFinalById(FAKE_FINAL_ID);
+    expect(result).toEqual({ kind: "error" });
+  });
+
+  it("network_error: kind=error を返す", async () => {
+    mockApiFetch.mockResolvedValueOnce({ kind: "network_error" });
+    const result = await getRecordFinalById(FAKE_FINAL_ID);
+    expect(result).toEqual({ kind: "error" });
   });
 });

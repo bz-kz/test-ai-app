@@ -10,6 +10,7 @@
  */
 import React from "react";
 import type { RecordFinal } from "@/types/recordFinal";
+import { formatJpDateTimeCompact } from "@/lib/dateFormat";
 
 export interface ChainListProps {
   /** 訂正チェーン — oldest → newest 順 */
@@ -26,21 +27,6 @@ export interface ChainListProps {
 function excerpt(content: string, maxLen: number = 80): string {
   if (content.length <= maxLen) return content;
   return content.slice(0, maxLen) + "…";
-}
-
-/**
- * ISO 日時文字列を JP ロケール "YYYY/MM/DD HH:mm" 形式に変換する。
- * タイムゾーンはブラウザのローカルタイムゾーンに従う。
- */
-function formatDateJp(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 /**
@@ -63,7 +49,7 @@ export function ChainList({ chain, label = "訂正履歴" }: ChainListProps) {
         {chain.map((entry, index) => {
           const isHead = index === lastIndex;
           const entryExcerpt = excerpt(entry.content);
-          const formattedDate = formatDateJp(entry.created_at);
+          const formattedDate = formatJpDateTimeCompact(entry.created_at);
           const version = index + 1;
           const ariaLabel = `第${version}版 (確定: ${formattedDate}) ${entryExcerpt}`;
 

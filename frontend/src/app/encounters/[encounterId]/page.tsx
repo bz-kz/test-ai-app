@@ -13,6 +13,7 @@ import React, { useEffect } from "react";
 import Link from "next/link";
 import { useEncounterDetail } from "@/hooks/useEncounterDetail";
 import BackButton from "@/components/atoms/BackButton";
+import { formatJpDate, formatJpDateTime } from "@/lib/dateFormat";
 
 type Params = { encounterId: string };
 
@@ -65,22 +66,6 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
 
   // --- loaded 状態 ---
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString("ja-JP", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-
-  const formatDateTime = (iso: string) =>
-    new Date(iso).toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
   // clinician_id は最初の 8 hex 文字 + 省略記号で表示する
   const shortClinicianId = `${encounter.clinician_id.replace(/-/g, "").slice(0, 8)}…`;
 
@@ -99,7 +84,7 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
         <dl className="space-y-2">
           <div className="flex gap-4">
             <dt className="w-32 text-sm font-medium text-slate">受診日</dt>
-            <dd className="text-sm text-navy">{formatDate(encounter.encountered_at)}</dd>
+            <dd className="text-sm text-navy">{formatJpDate(encounter.encountered_at)}</dd>
           </div>
           <div className="flex gap-4">
             <dt className="w-32 text-sm font-medium text-slate">担当医 ID</dt>
@@ -107,7 +92,7 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
           </div>
           <div className="flex gap-4">
             <dt className="w-32 text-sm font-medium text-slate">登録日時</dt>
-            <dd className="text-sm text-navy">{formatDateTime(encounter.created_at)}</dd>
+            <dd className="text-sm text-navy">{formatJpDateTime(encounter.created_at)}</dd>
           </div>
         </dl>
       </section>
@@ -135,7 +120,7 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
                 key={draft.id}
                 className="rounded-[8px] border border-slate/20 bg-surface px-4 py-3"
               >
-                <p className="mb-1 text-xs text-slate">{formatDateTime(draft.created_at)}</p>
+                <p className="mb-1 text-xs text-slate">{formatJpDateTime(draft.created_at)}</p>
                 <p className="text-sm text-navy">
                   {draft.content.length > 80 ? `${draft.content.slice(0, 80)}…` : draft.content}
                 </p>
@@ -158,7 +143,7 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
                 key={final.id}
                 className="rounded-[8px] border border-slate/20 bg-surface px-4 py-3"
               >
-                <p className="mb-1 text-xs text-slate">{formatDateTime(final.created_at)}</p>
+                <p className="mb-1 text-xs text-slate">{formatJpDateTime(final.created_at)}</p>
                 <p className="text-sm text-navy">
                   {final.content.length > 80 ? `${final.content.slice(0, 80)}…` : final.content}
                 </p>
