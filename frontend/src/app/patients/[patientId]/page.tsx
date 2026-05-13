@@ -16,7 +16,7 @@ import { useCreateEncounter } from "@/hooks/useCreateEncounter";
 import Input from "@/components/atoms/Input";
 import Button from "@/components/atoms/Button";
 import BackButton from "@/components/atoms/BackButton";
-import { CONFIRMATION_AUTO_HIDE_MS } from "@/lib/constants";
+import { formatJpDate, formatJpDateTime } from "@/lib/dateFormat";
 
 type Params = { patientId: string };
 
@@ -110,22 +110,6 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
 
   // --- loaded 状態 ---
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString("ja-JP", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-
-  const formatDateTime = (iso: string) =>
-    new Date(iso).toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <nav className="mb-6">
@@ -151,7 +135,7 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
           </div>
           <div className="flex gap-4">
             <dt className="w-32 text-sm font-medium text-slate">登録日時</dt>
-            <dd className="text-sm text-navy">{formatDateTime(patient.created_at)}</dd>
+            <dd className="text-sm text-navy">{formatJpDateTime(patient.created_at)}</dd>
           </div>
         </dl>
       </section>
@@ -170,7 +154,7 @@ export default function PatientDetailPage({ params }: { params: Promise<Params> 
                   href={`/encounters/${enc.id}`}
                   className="block rounded-[8px] border border-slate/20 bg-surface px-4 py-3 text-sm text-navy hover:border-navy hover:bg-slate/5"
                 >
-                  {formatDate(enc.encountered_at)}
+                  {formatJpDate(enc.encountered_at)}
                 </Link>
               </li>
             ))}
