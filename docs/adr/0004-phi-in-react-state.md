@@ -1,6 +1,6 @@
 # ADR 0004: PHI buffers MUST live in `useRef`, not `useState`
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-12
 - **Owner:** Generator (main loop) — drafted post-FE-013 first QA Failure
 - **Related Spec:** `.claude/rules/local-llm-and-phi.md` §4, `frontend/SPEC.md#voice-capture`, `frontend/SPEC.md#streaming-voice-capture`
@@ -46,7 +46,7 @@ Extend `.claude/rules/local-llm-and-phi.md` §4 with the following binding claus
 
 ## Open follow-ups
 
-- [ ] Human edits `.claude/rules/local-llm-and-phi.md` §4 per this ADR's §Decision (agents cannot edit `.claude/rules/` per `AGENTS.md` §3).
+- [x] Human edits `.claude/rules/local-llm-and-phi.md` §4 per this ADR's §Decision (agents cannot edit `.claude/rules/` per `AGENTS.md` §3). Applied 2026-05-13 — clauses 1–4 live in §4 of the rule.
 - [ ] Update `.claude/skills/security-check/SKILL.md` Probe 10 wording to enumerate the `useState<...>` anti-patterns for PHI buffers.
 - [ ] Update `frontend/SPEC.md#voice-capture` to reference this ADR rather than restating the rule inline.
 - [ ] Consider whether `backend/SPEC.md` needs a parallel clause for backend buffer hygiene (low priority — backend code paths are short-lived per request).

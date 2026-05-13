@@ -80,13 +80,14 @@ An agent escalates to Planner via the Spec Pivot Request shape when:
 
 ### 8.2 Refusals (non-negotiable)
 
-- Never `git push` from any agent. The human pushes.
+- Never `git push origin main` (any form). `main` is a GitHub-protected branch (configured 2026-05-13); the rule is enforced both by agent discipline and server-side. Force-push to `main` is likewise blocked. Pushing to non-default feature branches and opening PRs via `gh pr create` is permitted (the human merges).
 - Never `--amend` a commit that has been handed to the Evaluator. Add a follow-up commit instead.
 - Never `--no-verify` / `--no-gpg-sign` or any hook bypass. If a hook fails, fix the underlying issue and create a new commit.
 - Never destructive ops (`reset --hard`, `clean -fd`, `branch -D`, `checkout -- <path>`, `restore <path>`, `push -f`, `rebase -i`) without an explicit user instruction in the current turn.
 - Never `git add -A` / `git add .`. Stage by explicit path so secrets and large binaries can't slip in.
 - Never edit human-only files via git tooling (see §3: `.claude/settings.json`, `.claude/agents/*.md`, `.claude/rules/*.md`).
 - Never `git log -uall` (memory-exhaustive on large repos).
+- The PR _merge_ remains human-only. Agents never call `gh pr merge` or click the GitHub merge UI; they hand the PR off and stop.
 
 ### 8.3 Commit message format
 

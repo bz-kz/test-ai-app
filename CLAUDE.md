@@ -36,7 +36,7 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 - **Compose:** `docker compose up -d` | `docker compose ps --status running` | `docker compose logs -f <svc>`
 - **Frontend:** `cd frontend && npm run dev` | `npm run build` | `npx tsc --noEmit` | `npx eslint .` | `npm test -- --run`
 - **Backend:** `cd backend && uvicorn main:app --reload` | `pyright` | `ruff check .` | `pytest -q`
-- **Git:** `git log --oneline -n 5` at session start to sync state. Never `git push` from an agent.
+- **Git:** `git log --oneline -n 5` at session start to sync state. `main` is GitHub-protected — agents never push to `main` and never merge PRs; pushing feature branches and opening PRs via `gh pr create` is permitted (see `AGENTS.md` §8.2).
 
 ## 5. Coding Standards
 
