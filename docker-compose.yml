@@ -88,6 +88,11 @@ services:
 
   llm:
     image: ollama/ollama:latest
+    environment:
+      # Flash Attention は gemma4:e4b の attention カーネルを加速する。精度には影響しない。
+      - OLLAMA_FLASH_ATTENTION=1
+      # デフォルト 5 分のアイドル unload を無効化し、PoC のセッション間で 10 GB モデル再ロードを避ける。
+      - OLLAMA_KEEP_ALIVE=24h
     volumes:
       - ollama_data:/root/.ollama
     # ポートをホストへ公開しない — internal-only（PHIルール §1）
