@@ -12,6 +12,7 @@
 import React, { useEffect } from "react";
 import Link from "next/link";
 import { useEncounterDetail } from "@/hooks/useEncounterDetail";
+import BackButton from "@/components/atoms/BackButton";
 
 type Params = { encounterId: string };
 
@@ -30,6 +31,9 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
   if (status === "loading" || status === "idle") {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <nav className="mb-6">
+          <BackButton label="← 患者詳細に戻る" />
+        </nav>
         <p className="text-center text-slate">読み込み中…</p>
       </main>
     );
@@ -38,6 +42,9 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
   if (status === "not_found") {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <nav className="mb-6">
+          <BackButton label="← 患者詳細に戻る" />
+        </nav>
         <p className="text-center text-slate">受診が見つかりません</p>
       </main>
     );
@@ -46,6 +53,9 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
   if (status === "error" || encounter === null) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
+        <nav className="mb-6">
+          <BackButton label="← 患者詳細に戻る" />
+        </nav>
         <p className="text-center text-error" role="alert">
           受診情報の取得に失敗しました
         </p>
@@ -77,9 +87,7 @@ export default function EncounterDetailPage({ params }: { params: Promise<Params
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <nav className="mb-6">
-        <Link href="/patients" className="text-sm text-sage hover:underline">
-          ← 患者検索に戻る
-        </Link>
+        <BackButton label="← 患者詳細に戻る" />
       </nav>
 
       {/* 受診カード */}
