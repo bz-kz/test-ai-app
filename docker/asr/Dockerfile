@@ -67,4 +67,4 @@ EXPOSE 8080
 # /models は外部ボリュームとしてマウントされる (asr_data)。
 # --no-gpu: CPU 推論強制（コンテナ内に GPU なし）。
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["test -f /models/ggml-medium-q5_0.bin || curl -fsSL -o /models/ggml-medium-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin && exec whisper-server --host 0.0.0.0 --port 8080 -m /models/ggml-medium-q5_0.bin -l ja --no-gpu"]
+CMD ["test -f /models/ggml-medium-q5_0.bin || curl -fsSL -o /models/ggml-medium-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin && exec whisper-server --host 0.0.0.0 --port 8080 -m /models/ggml-medium-q5_0.bin -l ja --no-gpu -t 4"]
