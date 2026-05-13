@@ -25,6 +25,15 @@ from app.interfaces.routers.patients import router as patients_router
 from app.interfaces.routers.transcribe import router as transcribe_router
 from app.interfaces.schemas import ErrorResponse
 
+# PR #2 (8b3982a) で追加した infrastructure 層の INFO 計装ログを stdout に流す。
+# basicConfig は最初に呼ばれた一度しか効かないため、ここで root logger を設定する。
+# PHI 規則: INFO レベルは数値/長さのみ (本文は debug)。debug を有効化する場合は
+# mask_phi() 必須 — local-llm-and-phi.md §3 参照。
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
