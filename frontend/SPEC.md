@@ -23,12 +23,12 @@ Sub-spec for the Next.js (15+) / TypeScript / Tailwind frontend. Extends, never 
   - DESIGN.md#atomic-design-mapping
   - docs/adr/0001-voice-input-and-local-asr.md — voice-input scope
 - **Acceptance:**
-  - [ ] Atoms (`src/components/atoms/`): Button, Input, Chip, Checkbox, RadioButton, Tooltip, Badge, RecordButton.
-  - [ ] Molecules (`src/components/molecules/`): FormField (label + Input + helper/error), LabValueRow, AIIndicatedText, MaskToggle, ConfidencePill, VoiceCapture.
-  - [ ] Organisms (`src/components/organisms/`): RecordDraftEditor, RecordList, EncounterPanel, InferenceProgress.
-  - [ ] No data-fetching inside components. API calls live in `src/services/`; React state and lifecycle in `src/hooks/`.
-  - [ ] Constants (model variant strings, latency thresholds, status colours, audio-capture limits) centralised in `src/lib/constants.ts`.
-- **Out-of-scope:** Templates layer (the project does not introduce one until needed).
+  - [ ] Atoms (`src/components/atoms/`): `BackButton`, `Button`, `Cursor`, `Input`, `RecordButton`, `TextArea`, and `icons/` (`CheckIcon`, `LockIcon`, `PencilIcon`, `RefreshIcon`).
+  - [ ] Molecules (`src/components/molecules/`): `AIIndicatedText`, `ChainList`, `ConfidencePill`, `FormField` (label + input + helper/error), `MrnSearchField`, `VoiceCapture`.
+  - [ ] Organisms (`src/components/organisms/`): _none yet_. Page-level composition currently lives in `src/app/.../_sections/` (e.g. `DraftGeneratingIndicator`, `DraftViewSection`, `DraftEditingSection`, `DraftFinalizedSection`). Promote a section to an organism only when it is reused across pages.
+  - [ ] No data-fetching inside components. API calls live in `src/services/`; React state and lifecycle in `src/hooks/`. (Mechanics owned by `.claude/rules/architecture-layer-direction.md` §2.)
+  - [ ] Constants (model variant strings, latency thresholds, status colours, audio-capture limits, draft-generation ETA) centralised in `src/lib/constants.ts`.
+- **Out-of-scope:** Templates layer (the project does not introduce one until needed). Lab-value rendering, masking toggles, chips/badges/tooltips, and inline form select widgets are speculative and MUST NOT be invented without a Block adding them.
 - **Open-questions:** _(none)_
 - **Gates Touched:** G7
 - **Affected Layers:** atoms, molecules, organisms
