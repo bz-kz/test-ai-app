@@ -127,15 +127,15 @@ If you skip this step the browser (or `curl`) hits the pre-build image. Symptoms
 
 ### GPU (NVIDIA)
 
-- Ensure the NVIDIA Container Toolkit is installed.
-- The `llm` service in `docker-compose.yml` requests `gpus: all`.
-- Verify with `docker compose exec llm nvidia-smi`. If empty, the toolkit is not wired.
+- The reference `docker-compose.yml` **does not** request a GPU. The default path is CPU-only.
+- To opt in to GPU: install the NVIDIA Container Toolkit, then add a `deploy.resources.reservations.devices` block to the `llm` service (or add `gpus: all` under `llm` if using legacy Compose v1 syntax). After the edit, `docker compose up -d --build llm` and verify with `docker compose exec llm nvidia-smi`.
+- Without that edit, `docker compose exec llm nvidia-smi` will fail or be empty — the toolkit is fine; the service simply hasn't been asked to reserve a device.
 
 ### CPU-only operation
 
-- No model swap is needed; `gemma4:e4b` runs on CPU.
-- Expect ~3× slower inference vs the GPU baseline; if your features depend on the SPEC latency budget, file a temporary override Block via Planner.
-- `LLM_TIMEOUT_S` is set to `300` in `docker-compose.yml` (INF-003 raised it from the 60/120 s defaults to absorb CPU-only first-token latency). Raise it further only if the first request after a fresh model pull is still timing out; never lower it below 120 s on CPU.
+- No model swap is needed; `gemma4:e4b` runs on CPU. This is the default in `docker-compose.yml`.
+- Expect ≥3× slower inference vs the GPU baseline. Measured CPU operating point (Playwright reproduction 2026-05-13, PR #13 / INF-006): first-token ~2–3 min, total ~4–5 min. The SPEC L96 budget (≤1 s TTFT / ≤6 s total) is the aspirational GPU target; the gap is structural and requires an ADR (GPU offload / hosted LLM / quantization A/B) to close.
+- `LLM_TIMEOUT_S` is set to `600` in `docker-compose.yml` (PR #13 / INF-006 raised it from `300`; previously raised from the 60 / 120 s defaults in commit `fa04bae` / INF-003). The stream timeout is `LLM_TIMEOUT_S × 2 = 1200` s per `ollama_client.stream()`. Raise further only if the first request after a fresh model pull is still timing out; never lower below 600 s on CPU.
 
 ## Troubleshooting
 
@@ -176,7 +176,7 @@ docker compose up -d
 
 ### Inference is slow / OOM
 
-`gemma4:e4b` is the single supported model; there is no smaller tier to fall back to. Verify GPU memory pressure with `docker compose exec llm nvidia-smi`. The tag is loaded at its publisher-supplied default precision — the project does NOT re-quantise (see `SPEC.md#hardware-assumptions`); any quantisation change requires an ADR amending that section. Confirm the request body is not exceeding the prompt-length budget in `SPEC.md#inference-layer-contract`. Document any temporary mitigation as a `## Spec Pivot Request` Block.
+`gemma4:e4b` is the single supported model; there is no smaller tier to fall back to. On the default CPU path verify pressure with `docker stats --no-stream` and watch the `llm` container's `MEM USAGE / LIMIT` row — `mem_limit: 11g` (INF-006) bounds the OOM blast radius to the `llm` service. If a GPU has been wired manually (see the GPU subsection above), `docker compose exec llm nvidia-smi` additionally shows VRAM. The tag is loaded at its publisher-supplied default precision — the project does NOT re-quantise (see `SPEC.md#hardware-assumptions`); any quantisation change requires an ADR amending that section. Confirm the request body is not exceeding the prompt-length budget in `SPEC.md#inference-layer-contract`. Document any temporary mitigation as a `## Spec Pivot Request` Block.
 
 ### A request returned PHI in a log line
 

@@ -18,7 +18,7 @@ This skill replaces the legacy `cost-check` subagent. It is a recipe: caller has
 ## Focus areas (severity priors)
 
 1. **Model singularity.** The project pins `gemma4:e4b` (LLM) and `whisper.cpp medium-q5_0` (ASR). Introducing a different model variant without an ADR is **CRITICAL**.
-2. **Latency budget — LLM.** First-token p95 ≤1 s and total-response p95 ≤6 s for 1k output tokens on the reference dev hardware per `SPEC.md#hardware-assumptions`. CPU operation may extend total-response (INF-003 / commit `fa04bae` raised `LLM_TIMEOUT_S=300`); the budget itself is unchanged but the operating point shifts.
+2. **Latency budget — LLM.** First-token p95 ≤1 s and total-response p95 ≤6 s for 1k output tokens on the reference dev hardware per `SPEC.md#hardware-assumptions`. **This is the aspirational GPU target.** On the CPU-only reference path the measured operating point is first-token ~2–3 min and total ~4–5 min (PR #13 / INF-006 Playwright reproduction 2026-05-13). The SPEC budget is unchanged; report CPU vs SPEC divergence as `[INFO]` with explicit "CPU operating point" framing, NOT as a regression. Closing the gap requires an ADR (GPU offload, hosted LLM, model swap, or quantization A/B). The configured timeout is `LLM_TIMEOUT_S=600` (PR #13, was `300` post-INF-003 / commit `fa04bae`, was `60` originally).
 3. **Latency budget — ASR.** `ASR_TIMEOUT_S=90` covers RTF ≤1.5× of a 60 s clip on reference CPU. First-byte does not apply (non-streaming). Hard cap on audio: 60 s, ≤2 MB payload, mono.
 4. **RAM peak.**
    - `gemma4:e4b` loaded: ~10 GiB resident (INF-003).
@@ -89,4 +89,4 @@ If the Block's budgets cannot be met by `gemma4:e4b` (LLM) or `whisper.cpp mediu
 - Approving the largest model on the grounds of "best quality" without weighing latency and VRAM.
 - Returning prose instead of the structured Findings shape — downstream agents cannot machine-check it.
 - Quoting Generator's self-reported numbers without running `docker stats` independently.
-- Reading `LLM_TIMEOUT_S=60` from a stale doc when `docker-compose.yml` says `300` — always grep the live config, not the SPEC narrative.
+- Reading `LLM_TIMEOUT_S=60` from a stale doc when `docker-compose.yml` says `600` — always grep the live config, not the SPEC narrative.

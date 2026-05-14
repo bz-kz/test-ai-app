@@ -152,11 +152,15 @@ Sizes: sm (6px 14px, 14px, 32px), md (10px 22px, 14px, 42px), lg (12px 28px, 16p
 
 Use this table as the placement rule when creating or moving components. New components MUST land in the correct layer; cross-layer composition flows in one direction (organisms → molecules → atoms).
 
-| Layer     | Path                                 | Components                                                                                         |
-| --------- | ------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Atoms     | `frontend/src/components/atoms/`     | Button, Input, Chip, Checkbox, Radio Button, Tooltip, Badge                                        |
-| Molecules | `frontend/src/components/molecules/` | FormField (label + Input + helper/error), LabValueRow, AIIndicatedText, MaskToggle, ConfidencePill |
-| Organisms | `frontend/src/components/organisms/` | RecordDraftEditor, RecordList, EncounterPanel, InferenceProgress                                   |
+This table reflects what currently exists in `frontend/src/components/`. The styling sections above (Buttons, Inputs, Chips, Checkboxes, Radio Buttons, Tooltips, Lists) are the **design vocabulary** for the system — some entries are intentionally design-only (not yet implemented as code components). See `frontend/SPEC.md#atomic-design-mapping` for the binding implementation rule.
+
+| Layer     | Path                                 | Components                                                                                                                                                   |
+| --------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Atoms     | `frontend/src/components/atoms/`     | `BackButton`, `Button`, `Cursor`, `Input`, `RecordButton`, `TextArea`, `icons/{Check,Lock,Pencil,Refresh}Icon`                                               |
+| Molecules | `frontend/src/components/molecules/` | `AIIndicatedText`, `ChainList`, `ConfidencePill`, `FormField` (label + input + helper/error), `MrnSearchField`, `VoiceCapture`                               |
+| Organisms | `frontend/src/components/organisms/` | _none yet — page-level composition lives under `src/app/.../_sections/` (e.g. `DraftGeneratingIndicator`, `DraftViewSection`) until reuse demands promotion_ |
+
+Design-vocabulary entries not yet implemented as code (Chip, Checkbox, Radio Button, Tooltip, Badge, `LabValueRow`, `MaskToggle`) are design intent — building them requires a frontend Block and their addition to `frontend/SPEC.md#atomic-design-mapping`.
 
 No data-fetching inside any component. Data flows in via props from a hook (`src/hooks/`); hooks call services (`src/services/`); services own `fetch`.
 
@@ -171,8 +175,8 @@ These patterns make AI-generated text immediately distinguishable from clinician
 
 ## Medical-Specific Patterns
 
-- **Lab Values.** Lab tables and inline lab readings render in **Fira Code** for tabular numeral alignment. Numeric columns are right-aligned. Status colours (Success / Warning / Error) follow clinical bands: in-range / borderline / out-of-range.
-- **PHI Mask Toggle.** A `<MaskToggle>` molecule sits in the encounter header and toggles patient identifier visibility (name, MRN, DOB, address, phone). Default state on shared screens: masked. Toggling is local-only and is never persisted to storage.
+- **Lab Values** _(design intent — not yet implemented)_**.** Lab tables and inline lab readings render in **Fira Code** for tabular numeral alignment. Numeric columns are right-aligned. Status colours (Success / Warning / Error) follow clinical bands: in-range / borderline / out-of-range.
+- **PHI Mask Toggle** _(design intent — not yet implemented)_**.** A `<MaskToggle>` molecule would sit in the encounter header and toggle patient identifier visibility (name, MRN, DOB, address, phone). Default state on shared screens: masked. Toggling is local-only and is never persisted to storage. Building this molecule requires a frontend Block + addition to `frontend/SPEC.md#atomic-design-mapping`.
 - **Status Semantics (clinical).** Success = within reference range or clinician-confirmed. Warning = pending result or borderline value. Error = out-of-range or system-level failure. Never use Info colour for clinical status — Info is reserved for product-level notices.
 
 ## Inference Latency UX
