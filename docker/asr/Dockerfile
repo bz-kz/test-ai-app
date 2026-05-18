@@ -66,5 +66,6 @@ EXPOSE 8080
 # モデルダウンロードとサーバ起動を CMD で行う。
 # /models は外部ボリュームとしてマウントされる (asr_data)。
 # --no-gpu: CPU 推論強制（コンテナ内に GPU なし）。
+# -t 8: 10コア機。ASR は臨床フロー上 LLM と逐次実行で競合せず、backend/OS 用に約2コア残す（スレッド数は精度非依存・ADR-0001 と独立）。
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["test -f /models/ggml-medium-q5_0.bin || curl -fsSL -o /models/ggml-medium-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin && exec whisper-server --host 0.0.0.0 --port 8080 -m /models/ggml-medium-q5_0.bin -l ja --no-gpu -t 4"]
+CMD ["test -f /models/ggml-medium-q5_0.bin || curl -fsSL -o /models/ggml-medium-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin && exec whisper-server --host 0.0.0.0 --port 8080 -m /models/ggml-medium-q5_0.bin -l ja --no-gpu -t 8"]
