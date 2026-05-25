@@ -1,0 +1,27 @@
+# cp terraform.tfvars.example terraform.tfvars して値を埋める。
+# terraform.tfvars は .gitignore 済 (commit 禁止)。
+#
+# Secret (DD_API_KEY / DD_APP_KEY) はここに書かない — .env を shell に source
+# すれば provider が自動検出する:
+#   set -a && source ../../.env && set +a && terraform plan
+# .env に DD_APP_KEY が無い場合は Datadog UI → Organization Settings →
+# Application Keys で発行して .env に追記する。
+
+# Datadog API URL。AP1 (東京) は下記。US1/EU1 等は対応する api.<site> に。
+datadog_api_url = "https://api.ap1.datadoghq.com"
+
+# 環境タグ
+env      = "local"
+app_name = "test-ai-app"
+
+# Monitor 通知先。Datadog の @-handle 形式。空配列で通知無し (定義のみ)。
+# 例: ["@slack-ai-medical-alerts", "@pagerduty-ai-medical"]
+monitor_recipients = []
+
+# --- Jira 通知設定 (オプション) ---
+# jira_project_key: Datadog → Jira integration の起票先 project key。
+#   空文字で Jira 起票無効。例 "OPS" / "MEDREC"。
+#   事前に Datadog UI → Integrations → Jira で API token + project default 登録が必須
+#   (詳細手順は jira.tf のヘッダコメント参照)。
+#   起票は critical 遷移時のみ (warning では起票しない)。
+jira_project_key = ""
