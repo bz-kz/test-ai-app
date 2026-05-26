@@ -19,8 +19,8 @@ ADR-0006 補強。Datadog の RUM Application / Service Catalog / Monitors / Das
   3 グループ overview。
 - **SLO** (`slos.tf`) — 3 SLO + 3 SLO alert monitor。7d rolling、target は
   backend availability 99% / LLM /generate p95 < 7min 95% / frontend LCP < 2500ms 75%。
-  通知は monitors.tf と同じ Slack/Jira pipeline を流用。設計詳細は
-  `docs/superpowers/specs/2026-05-26-datadog-slo-design.md`。
+  通知は monitors.tf の critical tier と同じ Slack/Jira pipeline を流用 (warning tier 無し)。
+  親 ADR は `docs/adr/0006-observability-via-otlp-otel.md`。具体的な SLI 選定・閾値・clean queries は `docs/superpowers/specs/2026-05-26-datadog-slo-design.md`。
 
 ## 前提
 
