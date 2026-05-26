@@ -75,8 +75,11 @@ docker compose build frontend && docker compose up -d frontend
 frontend/                         Next.js 15 app (App Router, Atomic Design + Onion)
   src/app/                          Routes (/, /patients, /encounters, /draft)
   src/components/{atoms,molecules,organisms}
+  src/components/_rum/              Datadog Browser RUM mount island (ADR-0006 FE-015)
   src/services/                     HTTP layer (fetch lives here only)
   src/hooks/                        State + effects
+  src/lib/datadog-rum.ts            RUM init + PHI scrub catalog (single allowed RUM SDK import)
+  src/instrumentation.ts            Next.js Node OTel auto-instrumentation (@vercel/otel)
 backend/                          FastAPI app (DDD)
   app/domain/                       Pure domain entities (no deps)
   app/usecases/                     Orchestration; only layer that constructs LLM/ASR clients
@@ -85,6 +88,7 @@ backend/                          FastAPI app (DDD)
     asr/                              LocalASRClient + WhisperCppLocalASRClient
   app/interfaces/                   FastAPI routers + Pydantic Request/Response models
 docker/asr/                       whisper.cpp multi-stage build (arm64 + amd64)
+docker/otel-collector/            OTel Collector contrib config (ADR-0006 補強)
 docs/
   runbook-local-dev.md              Operator step-by-step
   adr/                              Accepted ADRs (binding)
@@ -94,6 +98,7 @@ docs/
   agents/                           Planner / Generator / Evaluator definitions
   rules/                            Binding project rules (ADR-gated)
   skills/                           Shared agent skills
+terraform/datadog/                Datadog IaC (RUM app, Service Catalog, monitors, dashboard)
 SPEC.md                           Project-level spec (root)
 frontend/SPEC.md, backend/SPEC.md Sub-specs
 CLAUDE.md                         Coding standards + harness flow
@@ -131,11 +136,11 @@ docker compose down -v              # destructive — wipes DB + model cache
 docker compose logs -f backend
 docker compose restart backend      # only useful when the image is already current
 
-# Frontend (host shell)
-cd frontend && npm run dev          # dev server
-npx tsc --noEmit                    # type check
-npx eslint .                        # lint
-npx vitest run                      # tests
+# Frontend (host shell — package manager: pnpm via corepack)
+cd frontend && pnpm dev             # dev server
+pnpm typecheck                      # type check (tsc --noEmit)
+pnpm lint                           # lint (next lint)
+pnpm test -- --run                  # tests (vitest, single run)
 
 # Backend (host shell with backend/.venv)
 cd backend

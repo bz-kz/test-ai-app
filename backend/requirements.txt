@@ -7,3 +7,12 @@ asyncpg==0.30.0
 sqlalchemy[asyncio]==2.0.41
 alembic==1.15.2
 python-multipart==0.0.20
+# OpenTelemetry — ADR-0006: ddtrace.auto から OTel auto-instrumentation へ移行。
+# distro[otlp] が SDK + OTLP HTTP exporter + propagator (W3C tracecontext) をまとめてセットアップする。
+# 起動コマンド側で `opentelemetry-instrument` ラッパを通すことで各 instrumentation が有効化される。
+opentelemetry-distro[otlp]==0.50b0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
+opentelemetry-instrumentation-asyncpg==0.50b0
+opentelemetry-instrumentation-logging==0.50b0

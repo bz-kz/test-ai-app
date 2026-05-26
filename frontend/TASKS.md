@@ -319,9 +319,9 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
   - [ ] `src/lib/constants.ts` — VOICE_CAPTURE_ERRORS (incl. `autoStopped`) + AUDIO_MAX_DURATION_S + AUDIO_MIME_TYPE + AUDIO_MAX_BYTES added.
   - [ ] `src/app/encounters/[encounterId]/draft/page.tsx` — VoiceCapture wired; onTranscript appends with newline separator; disabled while finalized/editing/streaming.
   - [ ] No FE-008 regression — all existing tests still pass.
-  - [ ] G1 `npx tsc --noEmit` — 0 errors.
-  - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
-  - [ ] G3 `npm test -- --run` — all tests pass; net count > 301.
+  - [ ] G1 `pnpm typecheck` — 0 errors.
+  - [ ] G2 `pnpm lint && pnpm format:check` — clean.
+  - [ ] G3 `pnpm test -- --run` — all tests pass; net count > 301.
   - [ ] G4 security-check — no hosted-ASR SDK; no Web Speech API; no MediaRecorder outside designated files; no storage writes; no PHI in console.
   - [ ] G5 cost-check — 60s cap enforced; latency UX tiers present; no heavy dep added.
 - **Out-of-scope:** Backend changes; audio persistence; streaming partial transcripts; voice-to-direct-SOAP; recording >60s; waveform/VU meter.
@@ -355,7 +355,7 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
   - [ ] `src/app/encounters/[encounterId]/draft/__tests__/page.test.tsx` extended: `renderPage` signature gains 6th optional override for `useEncounterFinals`; new `describe("DraftPage (FE-010: finalized auto-sync on mount)")` with ≥4 tests covering the four edge cases.
   - [ ] Cross-cutting: 0 `fetch(` in components/app; 0 storage writes; 0 `console.*`; 0 `: any`; no raw HTML; no new heavy dep.
   - [ ] No FE-003..009 regression: full test suite passes.
-  - [ ] G1 `npx tsc --noEmit` clean; G2 `npx eslint . && npx prettier --check .` clean; G3 `npm test -- --run` all pass; net count > 353.
+  - [ ] G1 `pnpm typecheck` clean; G2 `pnpm lint && pnpm format:check` clean; G3 `pnpm test -- --run` all pass; net count > 353.
   - [ ] G4 security-check skill invoked; PHI handling verified.
 - **Out-of-scope:** Server-pushed revalidation; non-head final selection; sibling encounter finals; user-visible error on finals fetch fail; refactoring useEncounterDrafts/useEncounterDetail; combining drafts/finals into single hook; backend changes; cost-check (no inference).
 - **Open-questions:** _(none)_
@@ -482,9 +482,9 @@ Active task list for the frontend. Each task is a Block per `docs/handoff-contra
     - 0 `dangerouslySetInnerHTML`.
     - 0 references to Web Speech API or `webkitSpeechRecognition`.
   - [ ] No FE-001..012 regression: the full frontend test suite (374 tests at FE-012 baseline) MUST stay green. Net new test count ≥+15 from the additions above.
-  - [ ] G1 `npx tsc --noEmit` — 0 errors.
-  - [ ] G2 `npx eslint . && npx prettier --check .` — clean.
-  - [ ] G3 `npm test -- --run` — all tests pass.
+  - [ ] G1 `pnpm typecheck` — 0 errors.
+  - [ ] G2 `pnpm lint && pnpm format:check` — clean.
+  - [ ] G3 `pnpm test -- --run` — all tests pass.
   - [ ] G4 security-check: no hosted-ASR SDKs added; no PHI in console/storage/URL; chunk text never inside aria-live region (chunk-progress counter only); `<pre>` block exists but is not aria-live.
   - [ ] G5 cost-check: when `ASR_STREAMING_ENABLED=true` against a real backend, first-chunk visible-feedback p95 ≤25 s on the reference CPU; chunk-progress label updates within 100 ms of `onChunk` callback.
   - [ ] docker-compose.yml frontend service env adds `NEXT_PUBLIC_ASR_STREAMING_ENABLED=false` (default off; per ADR-0003 rollback contract).

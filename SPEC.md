@@ -170,3 +170,5 @@ Project-level specification. Sub-specs in `frontend/SPEC.md` and `backend/SPEC.m
 - ADR index: `NOTES.md`
 - PHI/LLM rule: `.claude/rules/local-llm-and-phi.md`
 - Voice/ASR decision: `docs/adr/0001-voice-input-and-local-asr.md`
+- Observability decision (hybrid OTel + Datadog RUM): `docs/adr/0006-observability-via-otlp-otel.md`
+- Datadog IaC (RUM app, Service Catalog, monitors, dashboard): `terraform/datadog/README.md`

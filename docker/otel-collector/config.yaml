@@ -1,0 +1,67 @@
+# ADR-0006 (Accepted, 2026-05-22) + 補強:
+# DD Agent 7.66.1 の OTLP receiver は trace 受信はできるが、内部 trace-agent への
+# bridge が wire されておらず Datadog APM へ traces が届かない (Writer 0 bytes 確認済)。
+#
+# 対策: Datadog Distribution of OTel Collector (dd-otel-collector) を sidecar として
+# 立てて、明示的に datadog exporter で Datadog APM intake へ traces を forward する。
+# backend / frontend Node の OTEL_EXPORTER_OTLP_ENDPOINT は datadog-agent:4318 から
+# otel-collector:4318 に切替。
+#
+# DD Agent は host metrics / dogstatsd / log forwarding (label opt-in) を引き続き担当。
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    # Datadog 推奨: 10s 以下で送信、payload は 1MB を目安に分割
+    send_batch_size: 1000
+    timeout: 10s
+    send_batch_max_size: 2000
+
+# ADR-0006 補強: datadog/connector が span を読み取り APM stats metrics
+# (trace.<service>.request.hits / errors / duration / p50 / p95 等) を emit する。
+# これが無いと dashboard / monitor 用の trace.* metric が一切生成されない
+# (collector 起動ログの "Trace metrics are now disabled in the Datadog Exporter
+# by default. ... configure the Datadog Connector" 警告に対応)。
+connectors:
+  datadog/connector:
+
+exporters:
+  datadog:
+    api:
+      site: ${env:DD_SITE}
+      key: ${env:DD_API_KEY}
+    # PHI 配慮: hostname / tags はアプリ側 OTEL_RESOURCE_ATTRIBUTES から拾う
+    hostname: ${env:DD_HOSTNAME}
+    # trace 配信は host metrics と独立 (Datadog の host 単位課金を増やさない)
+    host_metadata:
+      enabled: false
+  # 動作確認用 debug exporter。本プロジェクトはローカル PoC scope のみだが、
+  # trace 流量が確認できたら削除しても良い (基本データは datadog exporter で十分)。
+  # detailed = 各 metric 名と data point を log に出す (実 metric 名確認用)。
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    # traces を OTLP 受信 → datadog exporter (APM intake へ trace 本体送信)
+    # 同時に datadog/connector へ供給して APM stats metrics を派生させる
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog, datadog/connector, debug]
+    # metrics は datadog/connector が emit したものを datadog exporter で送る
+    # (アプリ側からの OTLP metrics 受信は ADR-0006 §Decision で v1 では無効化)
+    metrics:
+      receivers: [datadog/connector]
+      processors: [batch]
+      exporters: [datadog, debug]
+  telemetry:
+    logs:
+      level: info

@@ -65,6 +65,14 @@ export const VOICE_CAPTURE_STATUS = {
 /** ADR-0003: ストリーミング ASR 機能フラグ。デフォルト false → FE-009 の動作を維持する。 */
 export const ASR_STREAMING_ENABLED = process.env.NEXT_PUBLIC_ASR_STREAMING_ENABLED === "true";
 
+/**
+ * ADR-0006 FE-015: Datadog Browser RUM 機能フラグ。デフォルト false。
+ * NEXT_PUBLIC_* は build 時 bake のため flip には docker compose build frontend が必須。
+ * applicationId / clientToken が設定されていない時は init 自体が no-op になるので、
+ * このフラグは「環境差分での kill switch」用途。
+ */
+export const RUM_ENABLED = process.env.NEXT_PUBLIC_RUM_ENABLED === "true";
+
 /** ADR-0003 ストリーミング: 最初のチャンク可視フィードバック目標 (ms) */
 export const ASR_STREAM_FIRST_CHUNK_MS = 25000;
 
