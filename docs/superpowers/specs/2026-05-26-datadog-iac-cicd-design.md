@@ -193,7 +193,7 @@ sed -i '' 's/<your-hcp-org>/bz-kz/g' terraform/datadog/backend.tf .github/workfl
 cd terraform/datadog
 set -a && source ../../.env && set +a
 export TF_TOKEN_app_terraform_io="<TF_API_TOKEN>"
-terraform init -migrate-state    # ローカル tfstate を HCP へ uploads (yes プロンプト)
+terraform init    # HCP migration の interactive プロンプトで "yes" → ローカル tfstate が HCP へ uploads される
 ```
 
 成功すると HCP workspace に既存 16 resources が登録される。ローカルの `terraform.tfstate` / `.backup` は不要に (`.gitignore` 維持で OK、削除可)。
@@ -275,7 +275,7 @@ PoC では 1 を基本にする。
 
 - HCP organization / workspace / variables 作成
 - GH Actions secret `TF_API_TOKEN` 設定
-- `terraform init -migrate-state` 実行
+- `terraform init` 実行 (HCP migration の interactive プロンプトに応答)
 
 ## 14. 設計を 1 段落で
 
