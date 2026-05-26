@@ -57,7 +57,7 @@ resource "datadog_service_level_objective" "backend_availability" {
     target    = 99.0
   }
 
-  tags = concat(local.common_tags, ["category:slo", "sli:backend_availability"])
+  tags = concat(local.common_tags, ["service:backend", "category:slo", "sli:backend_availability"])
 }
 ```
 
@@ -93,7 +93,7 @@ resource "datadog_service_level_objective" "llm_latency" {
     target    = 95.0
   }
 
-  tags = concat(local.common_tags, ["category:slo", "sli:llm_latency", "subsystem:llm"])
+  tags = concat(local.common_tags, ["service:backend", "category:slo", "sli:llm_latency", "subsystem:llm"])
 }
 ```
 
