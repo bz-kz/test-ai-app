@@ -1,0 +1,13 @@
+# Terraform working state
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Local var files (実 API key を含むため commit 禁止)
+*.tfvars
+*.auto.tfvars
+!*.tfvars.example
+
+# Lock file は CI/CD (ADR-0007) で provider 版を pin するため commit する。
