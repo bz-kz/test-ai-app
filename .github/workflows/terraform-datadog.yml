@@ -16,7 +16,7 @@ permissions:
   pull-requests: write
 
 env:
-  TF_CLOUD_ORGANIZATION: "<your-hcp-org>"
+  TF_CLOUD_ORGANIZATION: "example-org-e62762"
   TF_WORKSPACE: "test-ai-app-datadog"
   TF_IN_AUTOMATION: "true"
 
