@@ -115,3 +115,52 @@ resource "datadog_monitor" "slo_alert_llm_latency" {
 
   tags = concat(local.common_tags, ["category:slo-alert", "sli:llm_latency", "subsystem:llm"])
 }
+
+# ----------------------------------------------------------------------------
+# SLO: Frontend LCP < 2500ms (Google Core Web Vital "Good")
+# ----------------------------------------------------------------------------
+# numerator/denominator の metric (rum.lcp.good / rum.lcp.total) は本 Block
+# 時点では Datadog 側に存在しない custom metric。RUM Analytics の
+# Generate Metric を別 Block (deferred D2) で作るまで SLO は "No data"。
+# IaC としては apply 可能 (Datadog はエラーにせず No data 扱い)。
+resource "datadog_service_level_objective" "frontend_lcp" {
+  name        = "[${var.app_name}] frontend LCP < 2500ms 7d"
+  type        = "metric"
+  description = "Frontend RUM view event のうち LCP < 2500ms の割合。Google Core Web Vital「Good」(p75 < 2500ms) に準拠。custom metric の生成は deferred (D2)。"
+
+  query {
+    numerator   = "sum:rum.lcp.good{service:frontend-browser,env:${var.env}}.as_count()"
+    denominator = "sum:rum.lcp.total{service:frontend-browser,env:${var.env}}.as_count()"
+  }
+
+  thresholds {
+    timeframe = "7d"
+    target    = 75.0
+  }
+
+  tags = concat(local.common_tags, ["category:slo", "sli:frontend_lcp", "service:frontend-browser"])
+}
+
+# ----------------------------------------------------------------------------
+# Alert: frontend_lcp SLO breach
+# ----------------------------------------------------------------------------
+resource "datadog_monitor" "slo_alert_frontend_lcp" {
+  name    = "[${var.app_name}] SLO breach — frontend LCP"
+  type    = "slo alert"
+  message = <<-EOT
+    Frontend LCP SLO (7d, target 75% of view events < 2500ms) が割れました。
+    確認: RUM Performance dashboard、最近の frontend deploy、画像/フォント遅延、サードパーティ script。
+    ${local.recipient_block}
+    ${local.jira_block}
+  EOT
+
+  query = "error_budget(\"${datadog_service_level_objective.frontend_lcp.id}\").over(\"7d\") > 100"
+
+  monitor_thresholds {
+    critical = 100
+  }
+
+  notify_no_data = false
+
+  tags = concat(local.common_tags, ["category:slo-alert", "sli:frontend_lcp", "service:frontend-browser"])
+}
