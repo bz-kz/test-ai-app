@@ -1,0 +1,670 @@
+{
+  "title": "test-ai-app — Overview",
+  "description": "AI Medical Record Generator overview. ADR-0006 (hybrid OTel + Datadog RUM). otel-collector + datadog/connector 経由で backend / frontend Node の APM stats を可視化、browser は RUM SDK 経由。",
+  "layout_type": "ordered",
+  "template_variables": [
+    {
+      "name": "env",
+      "prefix": "env",
+      "available_values": ["local"],
+      "defaults": ["local"]
+    }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "title": "Browser — RUM (frontend-browser)",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Sessions (last 1h)",
+              "description": "過去1時間にブラウザからアクセスしたユニークなセッション数。誰かがアプリを触っているかをざっくり確認するときに見る。0 が続いたら frontend が誰にも使われていない or RUM SDK が止まっている疑い。",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "requests": [
+                {
+                  "response_format": "scalar",
+                  "queries": [
+                    {
+                      "data_source": "rum",
+                      "name": "sessions",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": {
+                        "query": "@type:session service:frontend-browser $env"
+                      }
+                    }
+                  ],
+                  "formulas": [{ "formula": "sessions" }]
+                }
+              ],
+              "autoscale": true,
+              "precision": 0
+            }
+          },
+          {
+            "definition": {
+              "title": "Page views (count / min) by view.name",
+              "description": "画面ごとに1分あたり何回開かれているか (URL は PHI scrub 済みの `:patientId` 形式)。よく使われる画面・あまり使われない画面を把握するときに見る。新機能を出した後の利用状況確認にも。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "min", "max", "value", "sum"],
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "rum",
+                      "name": "views",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": {
+                        "query": "@type:view service:frontend-browser $env"
+                      },
+                      "group_by": [
+                        {
+                          "facet": "@view.name",
+                          "limit": 10,
+                          "sort": { "aggregation": "count", "order": "desc" }
+                        }
+                      ]
+                    }
+                  ],
+                  "formulas": [{ "formula": "views" }],
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "views / min",
+                "scale": "linear",
+                "min": "auto",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "JS errors (count / min, browser-side)",
+              "description": "ブラウザ側で発生した JavaScript エラーの数 (1分あたり)。ユーザの画面で何か壊れていないかを確認するときに見る。棒が立ったら RUM の Error Tracking で詳細を追う (PHI scrub 後の error.message)。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": false,
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "rum",
+                      "name": "errors",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": {
+                        "query": "@type:error service:frontend-browser $env"
+                      }
+                    }
+                  ],
+                  "formulas": [{ "formula": "errors" }],
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "display_type": "bars"
+                }
+              ],
+              "yaxis": {
+                "label": "errors / min",
+                "scale": "linear",
+                "min": "auto",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "Core Web Vitals (p75) — LCP / INP / CLS",
+              "description": "Google が定める「ユーザ体感」の3指標。**LCP** (主要コンテンツ表示 / ms): ≤2500=Good、≤4000=要改善。**INP** (入力からの応答 / ms): ≤200=Good、≤500=要改善。**CLS** (レイアウトずれ / 単位なし): ≤0.1=Good、≤0.25=要改善。フロントの体感を数値で追いたい時に。",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_table",
+              "requests": [
+                {
+                  "response_format": "scalar",
+                  "queries": [
+                    {
+                      "data_source": "rum",
+                      "name": "lcp",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc75",
+                        "metric": "@view.largest_contentful_paint"
+                      },
+                      "search": {
+                        "query": "@type:view service:frontend-browser $env"
+                      }
+                    },
+                    {
+                      "data_source": "rum",
+                      "name": "inp",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc75",
+                        "metric": "@view.interaction_to_next_paint"
+                      },
+                      "search": {
+                        "query": "@type:view service:frontend-browser $env"
+                      }
+                    },
+                    {
+                      "data_source": "rum",
+                      "name": "cls",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc75",
+                        "metric": "@view.cumulative_layout_shift"
+                      },
+                      "search": {
+                        "query": "@type:view service:frontend-browser $env"
+                      }
+                    }
+                  ],
+                  "formulas": [
+                    { "formula": "lcp", "alias": "LCP p75 (ms)" },
+                    { "formula": "inp", "alias": "INP p75 (ms)" },
+                    { "formula": "cls", "alias": "CLS p75" }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Backend — APM (service:backend via otel-collector)",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Request rate (hits / sec) by resource_name",
+              "description": "バックエンド API のエンドポイントごとのリクエスト数 (秒単位)。どの API がよく叩かれているか、急に減ったエンドポイントがないかを見るときに使う。`resource_name` = FastAPI ルートテンプレート (例: `GET /patients/{patient_id}`)。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "spans",
+                      "name": "hits",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": {
+                        "query": "service:backend $env operation_name:opentelemetry.instrumentation.fastapi.server"
+                      },
+                      "group_by": [
+                        {
+                          "facet": "resource_name",
+                          "limit": 10,
+                          "sort": { "aggregation": "count", "order": "desc" }
+                        }
+                      ]
+                    }
+                  ],
+                  "formulas": [{ "formula": "hits" }],
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  },
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "hits / sec",
+                "scale": "linear",
+                "min": "auto",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "Latency (ms) — p50 / p95 / p99",
+              "description": "バックエンド API のレスポンス時間 (ミリ秒、ns→ms に換算済み)。p50 = 真ん中の速さ、p95 = 遅い側 5%、p99 = 最悪 1%。普段との差が大きい時、特に p95/p99 が跳ねたら遅延の調査が必要。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "spans",
+                      "name": "p50",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc50",
+                        "metric": "@duration"
+                      },
+                      "search": {
+                        "query": "service:backend $env operation_name:opentelemetry.instrumentation.fastapi.server"
+                      },
+                      "group_by": []
+                    },
+                    {
+                      "data_source": "spans",
+                      "name": "p95",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc95",
+                        "metric": "@duration"
+                      },
+                      "search": {
+                        "query": "service:backend $env operation_name:opentelemetry.instrumentation.fastapi.server"
+                      },
+                      "group_by": []
+                    },
+                    {
+                      "data_source": "spans",
+                      "name": "p99",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc99",
+                        "metric": "@duration"
+                      },
+                      "search": {
+                        "query": "service:backend $env operation_name:opentelemetry.instrumentation.fastapi.server"
+                      },
+                      "group_by": []
+                    }
+                  ],
+                  "formulas": [
+                    { "formula": "p50 / 1000000", "alias": "p50 (ms)" },
+                    { "formula": "p95 / 1000000", "alias": "p95 (ms)" },
+                    { "formula": "p99 / 1000000", "alias": "p99 (ms)" }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "milliseconds",
+                "scale": "linear",
+                "min": "auto",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "Error rate (%) — errors / hits × 100",
+              "description": "バックエンドのエラー率 (%)。0 = 正常、5 = 5% が失敗。ここが上がったら障害の合図 — まず `Request rate` でどの endpoint が落ちているかを確認し、APM Traces で具体的な exception を追う。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": false,
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "spans",
+                      "name": "errors",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": {
+                        "query": "service:backend $env operation_name:opentelemetry.instrumentation.fastapi.server status:error"
+                      },
+                      "group_by": []
+                    },
+                    {
+                      "data_source": "spans",
+                      "name": "hits",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": {
+                        "query": "service:backend $env operation_name:opentelemetry.instrumentation.fastapi.server"
+                      },
+                      "group_by": []
+                    }
+                  ],
+                  "formulas": [
+                    {
+                      "formula": "(errors / hits) * 100",
+                      "alias": "error_rate (%)"
+                    }
+                  ],
+                  "style": { "palette": "warm" },
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "percent",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Inference — LLM / ASR outbound spans (from backend httpx)",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "definition": {
+              "title": "LLM (ollama) p95 duration (s) — target ≤5min on CPU (INF-006)",
+              "description": "LLM (ollama gemma4:e4b) の推論にかかった時間 (秒、ns→s に換算済み、p95)。INF-006 で CPU 環境は **5 分 (=300 秒) 以内が目標** (黄色ライン)、7 分 (=420 秒) 超で alert (赤ライン)。5min ラインを越え始めたらモデル設定や入力長を見直す。GPU を載せると大幅に下がる。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": false,
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "spans",
+                      "name": "p95",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc95",
+                        "metric": "@duration"
+                      },
+                      "search": {
+                        "query": "service:backend $env @http.url:*llm*"
+                      }
+                    }
+                  ],
+                  "formulas": [
+                    { "formula": "p95 / 1000000000", "alias": "p95 (s)" }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "seconds",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              },
+              "markers": [
+                {
+                  "label": "5min (target)",
+                  "value": "y = 300",
+                  "display_type": "warning dashed"
+                },
+                {
+                  "label": "7min (alert)",
+                  "value": "y = 420",
+                  "display_type": "error dashed"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "ASR (whisper.cpp) p95 duration (s)",
+              "description": "音声→テキスト変換 (whisper.cpp medium-q5_0) にかかった時間 (秒、ns→s に換算済み、p95)。録音が長いほど時間がかかる前提なので、急に伸びたら asr コンテナのリソース (CPU/メモリ) を確認。`docker compose stats asr` で見える。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": false,
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "spans",
+                      "name": "p95",
+                      "indexes": ["*"],
+                      "compute": {
+                        "aggregation": "pc95",
+                        "metric": "@duration"
+                      },
+                      "search": {
+                        "query": "service:backend $env @http.url:*asr*"
+                      }
+                    }
+                  ],
+                  "formulas": [
+                    { "formula": "p95 / 1000000000", "alias": "p95 (s)" }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "seconds",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "Outbound HTTP — count (calls) by URL (last 1h)",
+              "description": "バックエンドコンテナから外向きに飛んだ HTTP 呼び出しの内訳。**`http://llm:*` と `http://asr:*` 以外のホストが出ていたら egress 違反の疑い** (.claude/rules/local-llm-and-phi.md §1)。security-check の補助として定期的にチェック。",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_table",
+              "requests": [
+                {
+                  "response_format": "scalar",
+                  "queries": [
+                    {
+                      "data_source": "spans",
+                      "name": "count",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": { "query": "service:backend $env @http.url:*" },
+                      "group_by": [
+                        {
+                          "facet": "@http.url",
+                          "limit": 20,
+                          "sort": { "aggregation": "count", "order": "desc" }
+                        }
+                      ]
+                    }
+                  ],
+                  "formulas": [{ "formula": "count", "alias": "calls" }]
+                }
+              ],
+              "has_search_bar": "auto"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Infrastructure — containers / DB / logs",
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Container CPU usage (%) by service",
+              "description": "各 docker コンテナの CPU 使用率 (1 CPU を 100% として、複数コアでは 100% を超えうる)。「アプリが遅い」時にどのサービスが詰まっているかの一次確認に使う。CPU bound の判定に。DD Agent の docker integration から取得 (デフォルトで有効)。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "cpu",
+                      "query": "avg:docker.cpu.usage{$env} by {container_name}"
+                    }
+                  ],
+                  "formulas": [{ "formula": "cpu", "alias": "cpu (%)" }],
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "label": "percent (per CPU)",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "Container memory RSS (bytes, auto-scaled to KiB/MiB/GiB) by service",
+              "description": "各 docker コンテナのメモリ使用量 (RSS = 実際に使っているバイト数、Datadog が自動で KB/MB/GB に整形)。OOM Kill (メモリ不足で強制終了) の事前察知に使う。目安: `llm` (ollama) が約 5GB、`asr` (whisper.cpp) が 1-2GB、それ以外は数百 MB。大幅超過はリーク疑い。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "mem",
+                      "query": "avg:docker.mem.rss{$env} by {container_name}"
+                    }
+                  ],
+                  "formulas": [{ "formula": "mem", "alias": "RSS (bytes)" }],
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ],
+              "yaxis": {
+                "label": "bytes",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "PostgreSQL — active connections (count)",
+              "description": "backend → postgres の現アクティブ接続数。SQLAlchemy プール枯渇 (全 connection busy) で API がタイムアウトする時の確認に。**⚠️ 要 postgres integration 有効化** — docker-compose.yml の postgres サービスに `com.datadoghq.ad.check_names=[\"postgres\"]` ラベルと接続情報を追加するまでは no data。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": false,
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "conn",
+                      "query": "avg:postgresql.connections{$env}"
+                    }
+                  ],
+                  "formulas": [
+                    { "formula": "conn", "alias": "active connections" }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "yaxis": {
+                "label": "connections",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          },
+          {
+            "definition": {
+              "title": "Error logs (count / min) by service (level:ERROR)",
+              "description": "ERROR レベルログの発生数 (1分単位、service ごと)。障害発生時の一次調査に。**⚠️ 要 log forwarding opt-in** — 現状は frontend のみ有効。backend のログを送るには docker-compose.yml line 245 周辺の `com.datadoghq.ad.logs` ラベルを uncomment して `docker compose up -d backend` で再起動。",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "response_format": "timeseries",
+                  "queries": [
+                    {
+                      "data_source": "logs",
+                      "name": "errors",
+                      "indexes": ["*"],
+                      "compute": { "aggregation": "count" },
+                      "search": { "query": "status:error $env" },
+                      "group_by": [
+                        {
+                          "facet": "service",
+                          "limit": 10,
+                          "sort": { "aggregation": "count", "order": "desc" }
+                        }
+                      ]
+                    }
+                  ],
+                  "formulas": [
+                    { "formula": "errors", "alias": "errors / min" }
+                  ],
+                  "display_type": "bars",
+                  "style": { "palette": "warm" }
+                }
+              ],
+              "yaxis": {
+                "label": "errors / min",
+                "scale": "linear",
+                "min": "0",
+                "max": "auto",
+                "include_zero": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+name: terraform-datadog
+
+on:
+  pull_request:
+    paths:
+      - "terraform/datadog/**"
+      - ".github/workflows/terraform-datadog.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/datadog/**"
+      - ".github/workflows/terraform-datadog.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_CLOUD_ORGANIZATION: "example-org-e62762"
+  TF_WORKSPACE: "test-ai-app-datadog"
+  TF_IN_AUTOMATION: "true"
+
+concurrency:
+  group: terraform-datadog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---- PR 時: plan を sticky comment で見せる ----
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: terraform/datadog
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - run: terraform fmt -check -recursive
+      - run: terraform init
+      - run: terraform validate
+      - id: plan
+        run: terraform plan -no-color -input=false
+        continue-on-error: true
+
+      - uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: terraform-datadog-plan
+          message: |
+            ### terraform plan (datadog)
+            ```
+            ${{ steps.plan.outputs.stdout }}
+            ```
+            stderr (if any):
+            ```
+            ${{ steps.plan.outputs.stderr }}
+            ```
+
+      - if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ---- main へ merge 後: apply ----
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: terraform/datadog
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - run: terraform init
+      - run: terraform apply -auto-approve -input=false -no-color

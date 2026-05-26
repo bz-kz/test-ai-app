@@ -19,10 +19,12 @@ This file is the index of architecture decisions for the project. Decision recor
 
 ## Index
 
-| ID                                                     | Title                                                           | Status   | Date       |
-| ------------------------------------------------------ | --------------------------------------------------------------- | -------- | ---------- |
-| [ADR-0001](docs/adr/0001-voice-input-and-local-asr.md) | Voice input and local ASR service                               | Accepted | 2026-05-12 |
-| ADR-0002                                               | _(not issued — number reserved)_                                | —        | —          |
-| [ADR-0003](docs/adr/0003-streaming-asr-chunked.md)     | Chunked streaming ASR with env-var rollback                     | Accepted | 2026-05-12 |
-| [ADR-0004](docs/adr/0004-phi-in-react-state.md)        | PHI buffers MUST live in useRef, not useState                   | Accepted | 2026-05-12 |
-| [ADR-0005](docs/adr/0005-agent-push-and-pr-policy.md)  | Agents may push to non-default branches and open PRs (no merge) | Accepted | 2026-05-12 |
+| ID                                                       | Title                                                                    | Status   | Date       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------ | -------- | ---------- |
+| [ADR-0001](docs/adr/0001-voice-input-and-local-asr.md)   | Voice input and local ASR service                                        | Accepted | 2026-05-12 |
+| ADR-0002                                                 | _(not issued — number reserved)_                                         | —        | —          |
+| [ADR-0003](docs/adr/0003-streaming-asr-chunked.md)       | Chunked streaming ASR with env-var rollback                              | Accepted | 2026-05-12 |
+| [ADR-0004](docs/adr/0004-phi-in-react-state.md)          | PHI buffers MUST live in useRef, not useState                            | Accepted | 2026-05-12 |
+| [ADR-0005](docs/adr/0005-agent-push-and-pr-policy.md)    | Agents may push to non-default branches and open PRs (no merge)          | Accepted | 2026-05-12 |
+| [ADR-0006](docs/adr/0006-observability-via-otlp-otel.md) | Hybrid observability — OTel for server runtimes, Datadog RUM for browser | Accepted | 2026-05-22 |
+| [ADR-0007](docs/adr/0007-iac-cd-via-github-actions.md)   | Datadog Terraform CI/CD via GitHub Actions (Datadog only opt-in)         | Accepted | 2026-05-26 |

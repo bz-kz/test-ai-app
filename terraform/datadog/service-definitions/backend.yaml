@@ -1,0 +1,34 @@
+schema-version: v2.2
+dd-service: backend
+team: ai-medical
+application: test-ai-app
+description: |
+  FastAPI + Python 3.12 backend. ローカル LLM (Ollama gemma4:e4b) と
+  ローカル ASR (whisper.cpp) を呼び出してカルテ下書き生成 + 音声転記を提供。
+  PHI を扱うため Datadog 送信前に DD Agent obfuscation が適用される。
+tier: experimental
+type: web
+languages:
+  - python
+contacts:
+  - name: AI Medical Team
+    type: slack
+    contact: "#ai-medical-alerts"
+links:
+  - name: Source
+    type: repo
+    provider: github
+    url: https://github.com/bz-kz/test-ai-app
+  - name: ADR-0006 (Observability)
+    type: doc
+    url: https://github.com/bz-kz/test-ai-app/blob/main/docs/adr/0006-observability-via-otlp-otel.md
+  - name: backend SPEC
+    type: doc
+    url: https://github.com/bz-kz/test-ai-app/blob/main/backend/SPEC.md
+tags:
+  - "app:test-ai-app"
+  - "tier:experimental"
+  - "phi:medical"
+integrations:
+  pagerduty:
+    service-url: ""
