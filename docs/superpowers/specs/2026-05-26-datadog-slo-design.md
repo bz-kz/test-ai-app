@@ -191,32 +191,35 @@ resource "datadog_monitor" "slo_alert_backend_availability" {
 
 ## 8. 適用後 verification
 
-`local-deployment-discipline.md` §3 と同じ精神で、Block 完了後の手動確認:
+ADR-0007 (CI/CD via GH Actions) 採択後は **PR merge = terraform apply 完了**。Block 完了後の確認手順:
 
-```bash
-cd terraform/datadog
-terraform plan   # 3 SLO + 3 SLO alert monitor の追加のみ
-terraform apply
-```
+1. **PR 上で sticky comment plan を確認** — `Plan: 6 to add, 2 to change, 0 to destroy` (= SLO 6 + pre-existing drift 2) であること。それ以上の resource が変更対象に出ていたら止まる。
+2. **PR merge** — auto-merge は禁止、人間が手で merge ボタンを押す。
+3. **GH Actions の `apply` job が緑** — Actions タブで terraform-datadog workflow の最新 run が success。
+4. **HCP Terraform Runs ページ** — 該当 run が `applied` ステータス、`6 added, 2 changed` の表示。
+5. **Datadog UI** で:
+   - Service Reliability → SLO list に 3 件 (`backend availability` / `LLM /generate p95 < 7min` / `frontend LCP < 2500ms`) が並ぶ。
+   - Monitors → SLO Alerts に 3 件 (`SLO breach — *`)。
+   - 初期 status は "No data" / "Calculating" (Caveat C3)。
 
-Datadog UI 上で:
+### Smoke (denominator にデータを 1 つ落とす)
 
-1. Service Reliability → SLO list に 3 件並ぶ
-2. Monitors → SLO Alerts に 3 件並ぶ
-3. 各 SLO の初期 status は "No data" / "Calculating" (C3)
-
-Smoke (denominator にデータを 1 つ落とす):
+CI apply 完了後、ローカルから:
 
 1. `docker compose up -d`
-2. ブラウザで `http://localhost:3000/` → frontend LCP の view event 1 件
+2. ブラウザで `http://localhost:3000/` → frontend RUM view event 1 件
 3. `curl http://localhost:8000/health` → backend `trace.hits` 1 件
 4. UI で `/api/generate` を 1 回呼ぶ → LLM latency 1 サンプル
 
-Metrics Explorer で以下が 1 点でも見えれば配線 OK:
+### Metrics Explorer 確認
+
+Datadog UI → Metrics Explorer で以下が 1 点でも見えれば配線 OK:
 
 - `trace.backend.request.hits{env:local}`
 - `p95:trace.backend.request{resource_name:POST_/api/generate,env:local}`
-- `@view.largest_contentful_paint{service:frontend-browser,env:local}` (RUM Analytics)
+- `@view.largest_contentful_paint{service:frontend-browser,env:local}` (RUM Analytics 側)
+
+LCP の custom metric (`rum.lcp.good` / `rum.lcp.total`) は未生成のため出ない (D2 で別 Block 対応)。
 
 ## 9. ADR の要否
 
