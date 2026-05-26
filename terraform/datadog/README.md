@@ -17,6 +17,10 @@ ADR-0006 補強。Datadog の RUM Application / Service Catalog / Monitors / Das
   message 内の `@jira-<project>` handle を on/off するのみ。詳細手順は `jira.tf`。
 - **Dashboard** (`dashboards.tf`) — RUM + backend APM + LLM/ASR latency の
   3 グループ overview。
+- **SLO** (`slos.tf`) — 3 SLO + 3 SLO alert monitor。7d rolling、target は
+  backend availability 99% / LLM /generate p95 < 7min 95% / frontend LCP < 2500ms 75%。
+  通知は monitors.tf と同じ Slack/Jira pipeline を流用。設計詳細は
+  `docs/superpowers/specs/2026-05-26-datadog-slo-design.md`。
 
 ## 前提
 
@@ -58,6 +62,13 @@ terraform output -raw rum_env_snippet >> ../../.env
   `trace.<integration>.*` ではなく resource span ベースになることがある。
 - `dashboards.tf` も同様に metric 名要調整。
 - Monitor 閾値は仮置き。1 週間のベースライン取得後に tighten 推奨。
+- 新規 SLO は最初の 7d は "No data" / "Calculating" 表示が正常。Service Reliability
+  ページで 7d 経過後に本値が出る。
+- `frontend_lcp` SLO は `rum.lcp.good` / `rum.lcp.total` custom metric に依存。
+  これらは RUM Analytics の Generate Metric で別 Block 作成 (spec D2)。
+  未生成のうちは LCP SLO のみ恒久 "No data"。他 2 SLO は影響なし。
+- LLM latency SLO は time-slice 型。event-count への統一は APM Span-Based Metric
+  追加が必要 (spec D1) で deferred。
 - `monitor_recipients` 未設定だと定義は作られるが通知が走らない (drill 用にあえて
   空のまま運用するパターンも可)。
 
