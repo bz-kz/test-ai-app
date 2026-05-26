@@ -1,0 +1,32 @@
+schema-version: v2.2
+dd-service: frontend
+team: ai-medical
+application: test-ai-app
+description: |
+  Next.js 15 App Router server runtime (Node 22)。SSR + Server Actions +
+  route handlers の OTel auto-instrumentation を @vercel/otel で計装。
+  Browser 側は別 service (frontend-browser) として分離されている。
+tier: experimental
+type: web
+languages:
+  - typescript
+  - javascript
+contacts:
+  - name: AI Medical Team
+    type: slack
+    contact: "#ai-medical-alerts"
+links:
+  - name: Source
+    type: repo
+    provider: github
+    url: https://github.com/bz-kz/test-ai-app
+  - name: ADR-0006 (Observability)
+    type: doc
+    url: https://github.com/bz-kz/test-ai-app/blob/main/docs/adr/0006-observability-via-otlp-otel.md
+  - name: frontend SPEC
+    type: doc
+    url: https://github.com/bz-kz/test-ai-app/blob/main/frontend/SPEC.md
+tags:
+  - "app:test-ai-app"
+  - "tier:experimental"
+  - "phi:medical"
