@@ -51,9 +51,9 @@ resource "datadog_monitor" "backend_5xx_rate" {
     warning  = 0.005
   }
 
-  notify_no_data    = false
+  notify_no_data      = false
   require_full_window = false
-  renotify_interval = 60
+  renotify_interval   = 60
 
   tags = concat(local.common_tags, ["service:backend", "category:errors"])
 }
@@ -81,7 +81,7 @@ resource "datadog_monitor" "llm_latency_p95" {
     warning  = 360000
   }
 
-  notify_no_data    = false
+  notify_no_data      = false
   require_full_window = false
 
   tags = concat(local.common_tags, ["service:backend", "category:latency", "subsystem:llm"])
