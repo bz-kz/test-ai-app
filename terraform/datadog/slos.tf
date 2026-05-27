@@ -152,6 +152,14 @@ resource "datadog_service_level_objective" "frontend_lcp" {
   }
 
   tags = concat(local.common_tags, ["category:slo", "sli:frontend_lcp", "service:frontend-browser"])
+
+  # type を metric → time_slice に変える等、Datadog 側で destroy + create が必要な
+  # 変更を入れた場合、slo_alert_frontend_lcp monitor が古い SLO ID を参照している
+  # ため Datadog API が 409 で destroy を拒否する。create_before_destroy = true で
+  # 「新 SLO 作成 → monitor を新 ID で更新 → 旧 SLO 削除」の順に並べ替える。
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # ----------------------------------------------------------------------------
