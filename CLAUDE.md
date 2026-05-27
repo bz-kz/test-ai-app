@@ -17,6 +17,11 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 - **Database:** PostgreSQL (compose service `postgres`, internal-only).
 - **LLM:** Local Gemma 4 E4B served by Ollama (compose service `llm`, internal-only). Single tier — Ollama tag `gemma4:e4b`. Hosted-LLM SDKs are forbidden — see `.claude/rules/local-llm-and-phi.md`.
 - **ASR:** Local Whisper served by `whisper.cpp` (compose service `asr`, internal-only). Single tier — `whisper.cpp medium-q5_0` GGML (pinned by ADR-0001). Hosted-ASR SDKs and the browser Web Speech API are forbidden — see `.claude/rules/local-llm-and-phi.md` §1.
+- **Observability (ADR-0006, Accepted):** Hybrid。サーバ runtime (backend FastAPI + frontend Next.js Node) は OpenTelemetry SDK + 
+  OTLP → 同一 network の `otel-collector:4318` → Datadog APM 直送 (datadog exporter)。ブラウザは `@datadog/browser-rum` を 
+  `frontend/src/lib/datadog-rum.ts` と `frontend/src/components/_rum/RumInit.tsx` の 2 箇所だけで使用。Datadog 専用 SDK (ddtrace / 
+  dd-trace-js) は backend/frontend Node では禁止。DD Agent は host metrics と DogStatsD と log forwarding (label opt-in 制) 
+  専用。Datadog IaC は `terraform/datadog/`。
 - **Infra:** Single `docker-compose.yml` runs frontend, backend, postgres, llm, asr on a developer's local machine. See `docs/runbook-local-dev.md`.
 - **Language:** UI strings in JP. Code comments in JP. (General language / comment-philosophy rules live in `~/.claude/CLAUDE.md`.)
 
@@ -35,7 +40,7 @@ Mid-flight gates: `cost-check`, `security-check`. All inter-agent prompts confor
 ## 4. Commands
 
 - **Compose:** `docker compose up -d` | `docker compose ps --status running` | `docker compose logs -f <svc>`
-- **Frontend:** `cd frontend && npm run dev` | `npm run build` | `npx tsc --noEmit` | `npx eslint .` | `npm test -- --run`
+- **Frontend:** `cd frontend && pnpm dev` | `pnpm build` | `pnpm typecheck` | `pnpm lint` | `pnpm test -- --run`
 - **Backend:** `cd backend && uvicorn main:app --reload` | `pyright` | `ruff check .` | `pytest -q`
 - **Git:** See `AGENTS.md` §8 for commit / push / PR rules (push-to-main forbidden, agent push to non-default branches + PR creation permitted per ADR-0005). General session-start `git log` hygiene lives in `~/.claude/CLAUDE.md`.
 

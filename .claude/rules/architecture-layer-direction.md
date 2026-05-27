@@ -47,6 +47,11 @@ Binding clauses:
 5. **Pages (`app/`)** import organisms / molecules / hooks. Pages MAY import services for non-stateful one-shot calls, but the hook pattern is preferred.
 6. **No PHI in `console.log` / `console.warn` / `console.error`.** Apply `maskPhi(...)` if you must debug. Verified by `.claude/skills/security-check/SKILL.md` Probe 9.
 7. **No PHI in `localStorage` / `sessionStorage` / `IndexedDB` / URL search params.** Audio Blob, ASR transcript, draft content, encounter UUID belong in component / hook state — and for buffers, in `useRef` (see `local-llm-and-phi.md` §4 erratum).
+8. **Infrastructure mounts (`src/components/_<name>/`)** are a fourth class alongside atoms / molecules / organisms. They are 
+`_`-prefixed (Next.js convention で route 化されない) client islands that mount once from layout for SDK init or similar 
+side-effect-only purpose。DOM を持たず null を return する。現状の唯一の例は `_rum/RumInit.tsx` (ADR-0006 FE-015)。新規追加には ADR
+必須。
+
 
 ## 3. Verification commands
 
@@ -67,6 +72,9 @@ grep -RnE '\bfetch\(' frontend/src/components frontend/src/app frontend/src/hook
 
 # Frontend atom isolation
 grep -RnE '@/services|@/hooks' frontend/src/components/atoms/ && exit 1 || echo "atoms clean"
+
+# Infrastructure mount components stay isolated
+grep -RE '@/services|@/hooks' frontend/src/components/_*/ 2>/dev/null && exit 1 || echo "infra mounts clean"
 ```
 
 ## 4. Changing this rule

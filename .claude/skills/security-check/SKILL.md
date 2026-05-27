@@ -75,6 +75,24 @@ grep -RnE 'useState[<(][^)>]*[Pp]artial|useState[<(][^)>]*[Tt]ranscript|useState
 #   cat /tmp/pr-body.md
 # Inspect each hit manually. Raw patient names, MRNs, DOBs, addresses in PR title or body
 # are CRITICAL. References by Block ID, fixture name, or structural anchor are PASS.
+
+# Probe 12 — ADR-0006: frontend に dd-trace (Node) を入れない
+grep -RE 'dd-trace' frontend/src && echo "CRITICAL: dd-trace in frontend" || echo "clean"
+
+# Probe 13 — ADR-0006: frontend src には OTel browser SDK は入らない
+grep -RE '@opentelemetry' frontend/src && echo "CRITICAL: OTel browser SDK in frontend" || echo "clean"
+
+# Probe 14 — ADR-0006 FE-015: Datadog Browser RUM SDK isolation
+grep -RE '@datadog/browser-' frontend/src | grep -vE '(lib/datadog-rum|components/_rum)' \
+  && echo "CRITICAL: RUM SDK leaked outside designated files" || echo "clean"
+
+# Probe 15 — ADR-0006 FE-015: RUM init defaults hardcode 検証
+grep -c 'defaultPrivacyLevel: "mask"' frontend/src/lib/datadog-rum.ts | grep -E '^1$' \
+  || echo "CRITICAL: defaultPrivacyLevel must be exactly 'mask', once"
+grep -c 'trackLongTasks: false' frontend/src/lib/datadog-rum.ts | grep -E '^1$' \
+  || echo "CRITICAL: trackLongTasks must be false, once"
+grep -c "id: \"anon\"" frontend/src/lib/datadog-rum.ts | grep -E '^1$' \
+  || echo "CRITICAL: setUser must be called exactly once with id:'anon'"
 ```
 
 For probes 9, 10, and 11, hits are not automatic failures — inspect each line. PHI variables passed to log calls, storage APIs, or PR titles/bodies without `mask_phi`/`maskPhi` are CRITICAL.

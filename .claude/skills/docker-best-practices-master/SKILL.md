@@ -59,7 +59,7 @@ Findings feed G0 (Compose-up), G4 (Security / PHI — network isolation), G7 (Ar
 - [ ] Final stage runs as a non-root user. **Verify:** `USER` directive present and not `root` / `0`.
 - [ ] `WORKDIR` set explicitly; no operations relying on `/` or `/root`.
 - [ ] `COPY` is used; `ADD` only for archive extraction or remote URLs (never as a general "smarter cp").
-- [ ] Dependency-manifest files (`package.json`+`package-lock.json`/`bun.lockb`, `pyproject.toml`+`uv.lock` or `requirements.txt`) are copied and installed BEFORE the rest of the source so layer cache is preserved on code-only edits.
+- [ ] Dependency-manifest files (`package.json`+`pnpm-lock.yaml`/`package-lock.json`/`bun.lockb`, `pyproject.toml`+`uv.lock` or `requirements.txt`) are copied and installed BEFORE the rest of the source so layer cache is preserved on code-only edits.
 - [ ] Build-time dependencies (compilers, dev headers) are confined to the `builder` stage. The runtime stage does not contain `gcc`, `make`, `apt-get`, etc.
 - [ ] No `apt-get update && apt-get install` without `--no-install-recommends` AND `rm -rf /var/lib/apt/lists/*` in the same `RUN`.
 - [ ] No secrets baked into the image (no `ENV API_KEY=...`, no `COPY .env ...`). Build args are used only for non-secret values.
@@ -96,7 +96,7 @@ Findings feed G0 (Compose-up), G4 (Security / PHI — network isolation), G7 (Ar
 
 ### 10. PHI rule cross-check (compose-specific)
 
-- [ ] No hosted-LLM SDK installed inside any image. **Verify:** the cumulative `pip`/`npm` install list inside each Dockerfile does NOT include `openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `bedrock`, `cohere`, `replicate`, `langchain-openai`, etc.
+- [ ] No hosted-LLM SDK installed inside any image. **Verify:** the cumulative `pip`/`pnpm`/`npm` install list inside each Dockerfile does NOT include `openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `bedrock`, `cohere`, `replicate`, `langchain-openai`, etc.
 - [ ] Backend image does not bake the prompt template or any sample PHI into the image (synthetic-only fixtures live in the test tree, not the runtime image).
 
 ## Anti-patterns to flag

@@ -259,7 +259,7 @@ services:
       - POSTGRES_DB=app
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d:ro
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro
     labels: # ← 追加
       com.datadoghq.ad.check_names: '["postgres"]'
       com.datadoghq.ad.init_configs: "[{}]"
