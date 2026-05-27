@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, DM_Sans, Fira_Code } from "next/font/google";
+
+import { RumInit } from "@/components/_rum/RumInit";
 import "./globals.css";
 
 /* DESIGN.md #Typography — next/font でウェブフォントを最適ロード (FOUC 防止) */
@@ -34,6 +36,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body className={`${plusJakartaSans.variable} ${dmSans.variable} ${firaCode.variable}`}>
+        <RumInit />
         {children}
       </body>
     </html>

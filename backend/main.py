@@ -1,5 +1,7 @@
 """FastAPI アプリケーションエントリポイント。"""
-
+# ADR-0006: OTel auto-instrumentation は Dockerfile CMD で
+# `opentelemetry-instrument uvicorn ...` ラッパ経由で有効化する。
+# import 行は不要 (ddtrace.auto と異なり SDK 側の import 副作用に依存しない)。
 import logging
 import os
 
@@ -53,7 +55,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Clinician-Id"],
+    # ADR-0006 FE-015: Datadog RUM が outbound fetch に W3C tracecontext header
+    # (traceparent / tracestate / baggage) を注入する。baggage は session.id/user.id 伝搬用。
+    # preflight を通すため allow_headers に明示追加。
+    allow_headers=["Content-Type", "X-Clinician-Id", "traceparent", "tracestate", "baggage"],
     allow_credentials=False,
     max_age=600,
 )

@@ -1,6 +1,45 @@
 # ローカル開発用 compose。本番オーケストレーション（k8s等）は対象外。
 # llm と postgres はホストへポートを公開しない — local-llm-and-phi.md §1 参照。
+#
+# ============================================================================
+# 観測 (Observability) 構成 — ハイブリッド (ADR-0006, Accepted 2026-05-22)
+# ============================================================================
+# 設計方針:
+# - サーバ side (backend + frontend Node runtime): OpenTelemetry SDK + OTLP
+#   送信先は同一 docker network 上の otel-collector:4318
+#   (DD Agent 7.66.1 の OTLP→APM bridge 不全のため、dd-otel-collector 相当
+#   sidecar を別途立てて datadog exporter で Datadog APM へ forward する)
+# - ブラウザ side: Datadog Browser RUM SDK 直送 (browser-intake-<DD_SITE>)
+#   server-side と異なり DD Agent / otel-collector 経由ではなく、SDK 内部の
+#   beforeSend で PHI を scrub してから直接 Datadog SaaS に POST
+# - DD Agent は host metrics / container metrics / DogStatsD / ログ転送 を担う
+# - Unified Service Tagging (env / service / version) を全サービスで設定
+#
+# PHI 保護 (重要 — medical app固有):
+# - postgres / llm / asr / backend のコンテナログ自動収集は OFF (PHI 漏洩防止)
+#   → ログ収集が必要なサービスは com.datadoghq.ad.logs ラベルで明示的に opt-in
+# - SQL クエリパラメータ / URL クエリ文字列 / パス内数値ID を obfuscation
+# - DogStatsD / メトリクスには PHI を入れない (アプリ側で除外)
+# - ブラウザ RUM payload は frontend/src/lib/datadog-rum.ts の URL scrub catalog +
+#   defaultPrivacyLevel='mask' (全 text mask) で防御 (ADR-0006 §Egress contracts)
+#
+# 環境変数 (.env に設定):
+#   DD_API_KEY=<Datadog API key>            # 必須 (送信用)
+#   DD_APP_KEY=<Datadog App Key>            # terraform/datadog 使用時 (管理 API 用)
+#   DD_SITE=ap1.datadoghq.com               # AP1 (東京) / us5.datadoghq.com etc.
+#   NEXT_PUBLIC_DD_RUM_APPLICATION_ID=<uuid> # RUM 有効化時 (terraform output から転記)
+#   NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN=<token>  # 同上
+#   NEXT_PUBLIC_RUM_ENABLED=true|false      # RUM kill switch (build-time bake)
+#   USER=<your-name>                        # 個人開発機の識別 (なくても default 'local')
+#   GIT_SHA=<commit-hash>                   # CI注入用 (任意, default 'dev')
+#   OTEL_TRACES_SAMPLER=parentbased_traceidratio   # 本番用 (任意)
+#   OTEL_TRACES_SAMPLER_ARG=0.1                    # 本番用 10% (任意)
+# ============================================================================
+
 services:
+  # =============================================================================
+  # frontend — Next.js アプリケーション
+  # =============================================================================
   frontend:
     build:
       context: ./frontend
@@ -10,9 +49,21 @@ services:
       args:
         - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
         - NEXT_PUBLIC_ASR_STREAMING_ENABLED=true
+        # ADR-0006 FE-015: Datadog Browser RUM env (build-time bake)。
+        # applicationId / clientToken は人間が Datadog UI → RUM Applications で作成し
+        # .env に転記。compose は ${VAR:-default} で .env から拾う。
+        # NEXT_PUBLIC_RUM_ENABLED=false の間は init no-op (kill switch)。
+        - NEXT_PUBLIC_RUM_ENABLED=${NEXT_PUBLIC_RUM_ENABLED:-false}
+        - NEXT_PUBLIC_DD_RUM_APPLICATION_ID=${NEXT_PUBLIC_DD_RUM_APPLICATION_ID:-}
+        - NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN=${NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN:-}
+        - NEXT_PUBLIC_DD_SITE=${NEXT_PUBLIC_DD_SITE:-ap1.datadoghq.com}
+        - NEXT_PUBLIC_DD_RUM_SERVICE=${NEXT_PUBLIC_DD_RUM_SERVICE:-frontend-browser}
+        - NEXT_PUBLIC_DD_RUM_ENV=${NEXT_PUBLIC_DD_RUM_ENV:-local}
+        - NEXT_PUBLIC_DD_RUM_VERSION=${NEXT_PUBLIC_DD_RUM_VERSION:-dev}
     ports:
       - "3000:3000"
     environment:
+      # ---- アプリ固有 ----
       # runtime からも参照可能にしておく (server-side レンダリング等で念のため)。
       # ただし JS バンドルへの焼き込みは上の build args 側が必須。
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
@@ -20,12 +71,83 @@ services:
       # "true" に変更すると BE-017 のストリーミングエンドポイントを使用する。
       # build args 側でも同値を指定すること (Next.js は build 時に bake する)。
       - NEXT_PUBLIC_ASR_STREAMING_ENABLED=true
+
+      # ADR-0006 FE-015: Datadog Browser RUM env (runtime — SSR から参照される可能性)。
+      # build args 側でも同値を指定する (Next.js は build 時に bake)。
+      - NEXT_PUBLIC_RUM_ENABLED=${NEXT_PUBLIC_RUM_ENABLED:-false}
+      - NEXT_PUBLIC_DD_RUM_APPLICATION_ID=${NEXT_PUBLIC_DD_RUM_APPLICATION_ID:-}
+      - NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN=${NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN:-}
+      - NEXT_PUBLIC_DD_SITE=${NEXT_PUBLIC_DD_SITE:-ap1.datadoghq.com}
+      - NEXT_PUBLIC_DD_RUM_SERVICE=${NEXT_PUBLIC_DD_RUM_SERVICE:-frontend-browser}
+      - NEXT_PUBLIC_DD_RUM_ENV=${NEXT_PUBLIC_DD_RUM_ENV:-local}
+      - NEXT_PUBLIC_DD_RUM_VERSION=${NEXT_PUBLIC_DD_RUM_VERSION:-dev}
+
+      # ---- Datadog Unified Service Tagging ----
+      # Datadog のベストプラクティス最重要項目。Service Catalog, APM Service Map, SLO等の
+      # 機能がこの3つの tag で正しく動く。dd-trace SDK / DD Agent 両方が参照。
+      - DD_SERVICE=frontend # サービス名 (Service Catalog の単位)
+      - DD_ENV=local # 環境 (prod/stg/local 等で分離)
+      - DD_VERSION=${GIT_SHA:-dev} # バージョン (CI で git SHA を注入、デフォルト dev)
+
+      # ---- OpenTelemetry SDK 設定 (DD Agent の OTLP receiver へ送信) ----
+      # アプリは OTel SDK でのみ計装 → DD Agent が Datadog 形式に変換して転送する。
+      # ベンダー切替時はアプリ側変更不要 (DD Agent を OTel Collector に差し替えるだけ)。
+      # 別途 `pnpm add @vercel/otel @opentelemetry/api` 等が必要。
+
+      # OTel が認識するサービス名 (OTEL_SERVICE_NAME は OTEL_RESOURCE_ATTRIBUTES の
+      # service.name より優先される)。DD_SERVICE と同一値を入れる。
+      - OTEL_SERVICE_NAME=frontend
+
+      # span/metric/log すべてに付与される共通属性。Datadog は
+      # deployment.environment → env、service.version → version に自動マッピング。
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local,service.version=${GIT_SHA:-dev}
+
+      # OTLP 送信先。ADR-0006 補強: DD Agent 7.66.1 の OTLP→APM bridge が壊れている
+      # ため、dd-otel-collector sidecar 経由で datadog exporter から APM intake へ。
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+
+      # OTLP プロトコル選択。http/protobuf は HTTP POST + protobuf binary 形式。
+      # ブラウザ/サーバーレス互換、デバッグ容易、サイズ効率が良いので推奨。
+      # 4317 を使う場合は grpc を指定すること (ポートとプロトコルは整合必須)。
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+
+      # SDK 内部キューの上限 (span 数)。OOM 防止のための有限キュー (drop policy)。
+      # 2048 で十分。「念のため大きく」はむしろ危険 (キュー溢れより前に OOM のリスク)。
+      - OTEL_BSP_MAX_QUEUE_SIZE=2048
+
+      # サンプリング設定。
+      # - parentbased_always_on:    親 span の判定を引き継ぎ、ルートは 100% (ローカル開発推奨)
+      # - parentbased_traceidratio: 親 span 判定を引き継ぎ、ルートは ARG の確率で採用 (本番推奨)
+      # - always_on:                常に 100% (デバッグ用)
+      # ARG の値は 0.0〜1.0 の確率。0.1 = 10%、1.0 = 100%。
+      # ★本番で使う場合: OTEL_TRACES_SAMPLER=parentbased_traceidratio, OTEL_TRACES_SAMPLER_ARG=0.1
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+
+      # ---- DogStatsD (任意のカスタムメトリクス送信用) ----
+      # アプリが `hot-shots` (Node) や `datadog` (Python) で custom metrics を送る際の宛先。
+      - DD_AGENT_HOST=datadog-agent # DogStatsD ホスト名
+      - DD_DOGSTATSD_PORT=8125 # DogStatsD UDP ポート (DD Agent デフォルト)
     depends_on:
       backend:
         condition: service_healthy
+      datadog-agent:
+        condition: service_healthy
+    env_file:
+      - .env
+    labels:
+      # frontend のログは Datadog に送る (Next.js 側で PHI を出力しない設計が前提)。
+      # PHI を含むエラーメッセージが出るリスクがある場合は [] にして送信を止める。
+      # source=nodejs は Datadog 側のログパース処理を Node.js 用に設定する hint。
+      - 'com.datadoghq.ad.logs=[{"source":"nodejs","service":"frontend"}]'
+      - 'com.datadoghq.tags.service: "ai-app-frontend"'
+      - 'com.datadoghq.tags.env: "prod"'
     networks:
       - internal
 
+  # =============================================================================
+  # backend — FastAPI (Python) アプリケーション
+  # =============================================================================
   backend:
     build:
       context: ./backend
@@ -33,6 +155,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # ---- アプリ固有 ----
       - DATABASE_URL=postgresql+asyncpg://app:app@postgres:5432/app
       - LLM_BASE_URL=http://llm:11434
       - LLM_MODEL=gemma4:e4b
@@ -48,6 +171,49 @@ services:
       - ASR_STREAM_CHUNK_SECONDS=10
       - ASR_STREAM_TOTAL_TIMEOUT_S=180
       - ASR_STREAM_FIRST_CHUNK_LATENCY_S=25
+
+      # ---- Datadog Unified Service Tagging ----
+      - DD_SERVICE=backend # Service Catalog 上の表示名
+      - DD_ENV=local # 環境タグ (本番テレメトリと混在防止)
+      - DD_VERSION=${GIT_SHA:-dev} # CI で git SHA 注入推奨
+
+      # ---- OpenTelemetry SDK 設定 ----
+      # FastAPI 利用なら以下で auto-instrumentation 有効化:
+      #   pip install opentelemetry-distro[otlp] opentelemetry-instrumentation
+      #   opentelemetry-bootstrap -a install
+      # 起動コマンドを `opentelemetry-instrument uvicorn main:app` に変更すること。
+      - OTEL_SERVICE_NAME=backend
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local,service.version=${GIT_SHA:-dev}
+      # OTLP 送信先 — frontend と同じく dd-otel-collector へ (ADR-0006 補強)。
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_BSP_MAX_QUEUE_SIZE=2048
+
+      # サンプリング (frontend と同じ。.env で本番値に切替可能)。
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+
+      # ADR-0006: traces のみ送信。DD Agent OTLP metrics/logs receiver は無効 (line 386-393)
+      # のため exporter も明示的に "none" にして 404 ノイズを抑える。
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+
+      # ---- PHI 保護 (ddtrace SDK 側で適用される設定) ----
+      # URL クエリ文字列内の PHI を含むキーを redaction (正規表現にマッチした値をマスク)。
+      # OTel SDK 利用時はこの env var は効かないが、ddtrace も併用する場合のため残す。
+      - DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP=(?i)(patient[_-]?id|encounter[_-]?id|session[_-]?id|token|key|secret|password|email|phone)=([^&]*)
+
+      # APM span 内に記録する HTTP ヘッダを最小化 (Authorization / Cookie 等を残さない)。
+      # 値はカンマ区切りの「許可リスト」。user-agent のみ記録。
+      - DD_TRACE_HEADER_TAGS=user-agent
+
+      # ホスト名をスパンに含めない (個人開発機名漏洩防止)。
+      - DD_TRACE_REPORT_HOSTNAME=false
+
+      # ---- DogStatsD ----
+      - DD_AGENT_HOST=datadog-agent
+      - DD_DOGSTATSD_PORT=8125
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,6 +221,8 @@ services:
         condition: service_started
       asr:
         condition: service_started
+      datadog-agent:
+        condition: service_healthy
     healthcheck:
       # python:slim に curl は含まれないため python -c で代替。/ping はプロセス生存確認のみ。
       test:
@@ -68,9 +236,21 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
+    env_file:
+      - .env
+    # ★PHI 対策: backend ログには PHI が含まれる可能性があるため自動収集 OFF。
+    # 必要な observability は APM トレース (obfuscation 済) + DogStatsD で代替。
+    # 個別に許可するなら下記をコメント解除し、アプリ側で PHI 除外済みログを出力すること。
+    labels:
+      com.datadoghq.ad.logs: '[{"source":"python","service":"backend"}]'
+      com.datadoghq.tags.service: "ai-app-backend"
+      com.datadoghq.tags.env: "prod"
     networks:
       - internal
 
+  # =============================================================================
+  # postgres — PostgreSQL データベース
+  # =============================================================================
   postgres:
     image: postgres:16-alpine
     environment:
@@ -79,6 +259,19 @@ services:
       - POSTGRES_DB=app
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d:ro
+    labels: # ← 追加
+      com.datadoghq.ad.check_names: '["postgres"]'
+      com.datadoghq.ad.init_configs: "[{}]"
+      com.datadoghq.ad.instances: |
+        [{
+          "host": "%%host%%",
+          "port": 5432,
+          "username": "datadog",
+          "password": "datadog",
+          "dbname": "app",
+          "dbm": false
+        }]
     # ポートをホストへ公開しない — internal-only
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d app"]
@@ -86,9 +279,17 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    # ★PHI 対策: postgres ログには PHI を含むクエリ/データが流れるため Datadog 送信を禁止。
+    # (DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=false により未ラベルコンテナは収集されない)
+    # DBM (Database Monitoring) を有効化する場合は別途 datadog ユーザを作って
+    # com.datadoghq.ad.check_names=["postgres"] ラベルを付与する。ただし DBM はクエリ
+    # シグネチャを送るため PHI 観点で再検討必要。
     networks:
       - internal
 
+  # =============================================================================
+  # llm — Ollama (ローカル LLM 推論サーバ)
+  # =============================================================================
   llm:
     image: ollama/ollama:latest
     # INF-006: gemma4:e4b は CPU で 9.4 GiB の重み + KV キャッシュで実測 10.1-10.2 GiB 使用。
@@ -103,9 +304,13 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     # ポートをホストへ公開しない — internal-only（PHIルール §1）
+    # ★PHI 対策: LLM 入出力 (プロンプト/レスポンス) に PHI が含まれるため Datadog 送信を禁止
     networks:
       - internal
 
+  # =============================================================================
+  # asr — Whisper.cpp (音声→テキスト変換サーバ)
+  # =============================================================================
   asr:
     # GHCR イメージ (ghcr.io/ggml-org/whisper.cpp:main) は linux/amd64 のみ。
     # Apple Silicon (arm64) 上で Rosetta 2 エミュレーションすると GGML CPU 検出ループで
@@ -133,6 +338,236 @@ services:
       timeout: 5s
       retries: 8
       start_period: 120s
+    # ★PHI 対策: ASR の transcription 結果 (音声→テキスト) に PHI が含まれるため Datadog 送信を禁止
+    networks:
+      - internal
+
+  # ===========================================================================
+  # OTel Collector (Datadog Distribution) — sidecar
+  # ADR-0006 補強: DD Agent 7.66.1 の OTLP receiver は trace 受信→APM bridge が
+  # 内部で wire されていない (Writer 0 bytes で確認、2026-05-22)。Datadog 公式の
+  # dd-otel-collector を sidecar として立てて datadog exporter で APM intake へ
+  # 明示 forward する。DD Agent は host metrics / dogstatsd / log forwarding を継続。
+  # backend / frontend Node の OTEL_EXPORTER_OTLP_ENDPOINT は本 service を指す。
+  # ===========================================================================
+  otel-collector:
+    # Datadog 公式 dd-otel-collector image は public registry に存在しないため
+    # upstream contrib (datadog exporter 同梱) を使用。
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      # config.yaml の ${env:VAR} で解決される。
+      DD_API_KEY: ${DD_API_KEY:?DD_API_KEY is required}
+      DD_SITE: ${DD_SITE:-ap1.datadoghq.com}
+      DD_HOSTNAME: "dev-${USER:-local}-test-ai-app"
+    # ポートをホストへ公開しない — internal-only。frontend/backend は internal network 経由で接続。
+    networks:
+      - internal
+    depends_on:
+      datadog-agent:
+        condition: service_healthy
+
+  # ===========================================================================
+  # Datadog Agent
+  # - APM (traces): アプリは otel-collector sidecar 経由で送信 (DD Agent OTLP→APM bridge 不全のため、ADR-0006 補強)
+  # - インフラメトリクス: Docker socket 経由でコンテナを自動検出
+  # - DogStatsD: アプリのカスタムメトリクス受信
+  # - ログ: ラベルで明示的に opt-in したコンテナのみ収集 (PHI 対策)
+  # - PHI 配慮: SQL/URL/数値ID の自動 obfuscation を有効化
+  # ===========================================================================
+  datadog-agent:
+    # ADR-0006: 7.79.0 で OTLP ingest pipeline が `failed to register process metrics`
+    # で起動しない既知問題 (BE-018 G0 で確認、2026-05-22)。7.66.1 LTS 候補に pin。
+    image: gcr.io/datadoghq/agent:7.66.1
+    container_name: datadog-agent
+    # llm が 11GB 使う環境のため、DD Agent 暴走時に他を圧迫しないよう明示制限。
+    # 通常 DD Agent は 200-500MB で動作。1GB あれば余裕。
+    mem_limit: 1g
+    environment:
+      # ====================================================================
+      # 認証
+      # ====================================================================
+      # Datadog SaaS への送信に必要な API key。.env に保存しコミットしない。
+      # ${VAR:?ERROR} 構文: VAR 未設定時にエラー停止 (DD_API_KEY 入れ忘れ防止)。
+      DD_API_KEY: ${DD_API_KEY:?DD_API_KEY is required (.env を作成して設定)}
+
+      # Datadog のリージョン/サイト。AP1 (東京), US1 (us-east), EU1 (eu-west) etc。
+      # 間違えると認証エラーになるので必ず Datadog Organization に合わせること。
+      DD_SITE: ${DD_SITE:-ap1.datadoghq.com}
+
+      # ====================================================================
+      # ホスト識別 (個人開発機を本番ホストと混同しないため)
+      # ====================================================================
+      # Datadog 上での「ホスト名」。これが APM Host 課金カウントのキーになる。
+      # 個人ごとに違う名前で区別 (チーム全員のDDが「localhost」で衝突しないため)。
+      DD_HOSTNAME: "dev-${USER:-local}-test-ai-app"
+
+      # 全テレメトリに付与される共通タグ。Datadog UI でフィルタ・除外に使う。
+      # 本番アラート/SLOには env:local を除外するフィルタを必ず設定すること。
+      DD_TAGS: "env:local,developer:${USER:-local},workload:local-dev,app:test-ai-app,phi:medical"
+
+      # DD_ENV: Unified Service Tagging の "env" タグ (Service Catalog で使う)。
+      # DD_HOSTNAME/DD_TAGS とは別の正規 tag。
+      DD_ENV: local
+
+      # ====================================================================
+      # APM (Application Performance Monitoring / 分散トレース)
+      # ====================================================================
+      # APM trace receiver を有効化 (デフォルト true だが明示)。
+      DD_APM_ENABLED: "true"
+
+      # 0.0.0.0 で listen するか (他コンテナからの受信を許可するか)。
+      # 同一ネットワーク上の backend/frontend から接続するため true 必須。
+      # false だと localhost 経由のみ受信となる。
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+
+      # --- PHI 対策: APM トレース内の自動 obfuscation ---
+      # URL クエリ文字列を全削除。例: /api/patient?id=123 → /api/patient
+      # PHI が紛れ込むリスクを完全に排除する強力な設定。
+      DD_APM_OBFUSCATION_HTTP_REMOVE_QUERY_STRING: "true"
+
+      # URL パス内の数値部分を ? に置換。
+      # 例: /api/patients/12345/encounters/678 → /api/patients/?/encounters/?
+      # ルートパターンは見えるが個別レコードは特定できない。
+      DD_APM_OBFUSCATION_HTTP_REMOVE_PATH_DIGITS: "true"
+
+      # SQL クエリ内の数値リテラルを ? に置換 (PHI 漏洩防止)。
+      # 例: WHERE patient_id = 12345 → WHERE patient_id = ?
+      # SQL の値 obfuscation はデフォルトでも有効だが、digit replace は明示が必要。
+      DD_APM_OBFUSCATION_SQL_REPLACE_DIGITS: "true"
+
+      # 1秒間に10トレースを送信する。それ以上はDropする
+      DD_APM_TARGET_TPS: 10 # default 10
+
+      # 優先して収集するトレースを指定する（Drop回避）例：サービス myservice からリソース GET /checkout のトレースを 100% キャプチャし、他のエンドポイントのトレースを 20% キャプチャする。
+      # DD_TRACE_SAMPLING_RULES: '[{"service": "my-service", "resource":"GET /checkout", "sample_rate": 1},{"service": "my-service", "sample_rate": 0.2}]'
+
+      # span のタグ値に対するパターンマッチ置換 (defense-in-depth)。
+      # メールアドレスと10桁以上の数字 (電話/カード等) をマスク。
+      DD_APM_REPLACE_TAGS: |
+        [
+          {"name": "*", "pattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", "repl": "REDACTED@EMAIL"},
+          {"name": "*", "pattern": "\\b[0-9]{10,}\\b", "repl": "REDACTED_NUMBER"}
+        ]
+
+      # ====================================================================
+      # OTLP receiver (アプリの OTel SDK から OTLP プロトコルで受信)
+      # ====================================================================
+      # HTTP/protobuf 用エンドポイント (port 4318)。OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf 用。
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: "0.0.0.0:4318"
+
+      # gRPC 用エンドポイント (port 4317)。OTEL_EXPORTER_OTLP_PROTOCOL=grpc 用。
+      # 両方有効にしておけばアプリ側でどちらを選んでも受け取れる。
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT: "0.0.0.0:4317"
+
+      # ADR-0006: OTLP traces pipeline を明示的に有効化。
+      # endpoint だけ設定しても collector が Closed のままになる事象 (BE-018 G0 で確認) の対策。
+      DD_OTLP_CONFIG_TRACES_ENABLED: "true"
+
+      # OTLP metrics pipeline は無効化 — 有効化すると DD_PROCESS_AGENT_ENABLED=false (line 433)
+      # との競合で `failed to register process metrics: process does not exist` で
+      # OTLP ingest pipeline 全体が起動しない (BE-018 G0 で確認、2026-05-22)。
+      # OTel metrics 受信は将来 Block で別途検討。
+      DD_OTLP_CONFIG_METRICS_ENABLED: "false"
+      DD_OTLP_CONFIG_LOGS_ENABLED: "false"
+
+      # ====================================================================
+      # DogStatsD (UDP でカスタムメトリクスを受信)
+      # ====================================================================
+      # 他コンテナからの UDP パケット受信を許可 (compose ネットワーク用)。
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+
+      # DogStatsD UDP listen ポート (デフォルト 8125)。アプリ側の DD_DOGSTATSD_PORT と同期。
+      DD_DOGSTATSD_PORT: "8125"
+
+      # ====================================================================
+      # コンテナ監視 (Docker socket 経由でコンテナを自動検出)
+      # ====================================================================
+      # Docker ラベルを Datadog tag に変換するマッピング。
+      # 例: docker-compose の service 名が DD tag の "compose_service" になる。
+      # Service Catalog や filtering で便利。
+      DD_DOCKER_LABELS_AS_TAGS: '{"com.docker.compose.service":"compose_service","com.docker.compose.project":"compose_project"}'
+
+      # 監視から除外するコンテナ (自分自身を除外)。
+      # 「DD Agent が DD Agent を監視する」無限ループ的な状態を回避。
+      DD_CONTAINER_EXCLUDE: "name:datadog-agent"
+
+      # ====================================================================
+      # ログ収集 (★PHI 対策のため opt-in 方式)
+      # ====================================================================
+      # ログ収集機能の有効化。これだけでは何も収集されない (許可制)。
+      DD_LOGS_ENABLED: "true"
+
+      # 全コンテナのログを自動収集するか。
+      # false → ラベル付きコンテナのみ収集 (★PHI 対策で必須)
+      # true → 全コンテナのログを送信 (PHI 漏洩のリスク)
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "false"
+
+      # 万一 PHI が紛れ込んだ場合の defense-in-depth フィルタ。
+      # mask_sequences は正規表現マッチ部分を replace_placeholder に置換する処理。
+      # 「Datadog に届く直前」で再度マスクする多層防御。
+      DD_LOGS_CONFIG_PROCESSING_RULES: |
+        [
+          {"type": "mask_sequences", "name": "mask_patient_id", "pattern": "patient[_-]?id\\s*[:=]\\s*[\"']?[0-9]+[\"']?", "replace_placeholder": "patient_id=REDACTED"},
+          {"type": "mask_sequences", "name": "mask_encounter_id", "pattern": "encounter[_-]?id\\s*[:=]\\s*[\"']?[0-9]+[\"']?", "replace_placeholder": "encounter_id=REDACTED"},
+          {"type": "mask_sequences", "name": "mask_emails", "pattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", "replace_placeholder": "REDACTED@EMAIL"},
+          {"type": "mask_sequences", "name": "mask_phone", "pattern": "\\b0[789]0[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}\\b", "replace_placeholder": "REDACTED_PHONE"}
+        ]
+
+      # ====================================================================
+      # 追加機能 (個人開発機での課金/プライバシー対策)
+      # ====================================================================
+      # Live Process / Live Container View を有効化。
+      # 元々は個人開発機のプロセス一覧/コマンドライン秘匿のため "false" にしていたが、
+      # DD Agent 7.79 の OTLP ingest pipeline が起動時に process metrics 登録を行うため
+      # "false" だと `failed to register process metrics: process does not exist` で
+      # OTLP collector が起動しない (BE-018 G0 で再現、2026-05-22)。
+      # ADR-0006 (OTLP/OTel 統一) の前提として OTLP 受信は必須なので "true" にする。
+      # トレードオフ: プロセス一覧が Datadog UI に出るがローカル PoC のみなので許容。
+      DD_PROCESS_AGENT_ENABLED: "true"
+
+      # DD Agent 同梱の autoconf template のうち、本プロジェクトに存在しない
+      # サービスへ接続試行する物を除外。redisdb は default で localhost:6379 を
+      # ping するため redis 不在では `TimeoutError: Timeout connecting to server`
+      # が定期的にログに出る (2026-05-22 確認)。他に kubernetes_state / etcd 等
+      # クラウドネイティブ系も無効化したい場合はカンマ区切りで追加。
+      DD_IGNORE_AUTOCONF: "redisdb"
+
+      # Continuous Profiler はデフォルト OFF (CPU/メモリオーバーヘッド回避)。
+      # 有効化する場合はアプリ側で DD_PROFILING_ENABLED=true と
+      # dd-trace の profiling パッケージインストールが必要。
+      # DD_PROFILING_ENABLED: "false"
+
+      # ログにtrace_idを注入
+      DD_LOGS_INJECTION: true
+
+      # Network Performance Monitoring (NPM)。Fargate 等では制限あり。
+      # 個人開発機では不要なため無効。
+      # DD_SYSTEM_PROBE_ENABLED: "false"
+
+    ports:
+      - "8125:8125/udp" # DogStatsD UDP (ホストアプリからの送信を許可する用)
+      - "8126:8126" # APM (Datadog wire protocol; dd-trace 利用時のレガシー経路)
+      - "4317:4317" # OTLP gRPC (ホストから直接送信したい場合)
+      - "4318:4318" # OTLP HTTP (ホストから直接送信したい場合)
+    volumes:
+      # Docker コンテナ自動検出 / メトリクス収集に必要 (read-only 必須)。
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # ホストのプロセス/cgroup 情報。Live Container メトリクス取得に必要。
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      # コンテナログ収集 (ラベルで opt-in されたコンテナのみ実際に送信)。
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    healthcheck:
+      # Datadog Agent 組み込みの health コマンド。
+      # Agent 自身の API server (port 5555) と core components の健全性を確認。
+      test: ["CMD", "agent", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s # 初期化に時間がかかるため長めに
     networks:
       - internal
 

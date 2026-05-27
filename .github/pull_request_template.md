@@ -38,9 +38,9 @@ Copy the Acceptance bullets from the SPEC Block(s) verbatim and tick them as the
 | Gate                  | Status     | Evidence                                                                                |
 | --------------------- | ---------- | --------------------------------------------------------------------------------------- |
 | G0 Compose-up         | PASS / N/A | <command + observed time, or "N/A — no compose change">                                 |
-| G1 Type               | PASS       | <`npx tsc --noEmit` exit 0 / `pyright` exit 0>                                          |
-| G2 Lint               | PASS       | <`npx eslint .` 0 errors / `ruff check .` exit 0>                                       |
-| G3 Unit               | PASS       | <`npm test -- --run` N tests / `pytest -q` N tests passed>                              |
+| G1 Type               | PASS       | <`pnpm typecheck` exit 0 / `pyright` exit 0>                                            |
+| G2 Lint               | PASS       | <`pnpm lint && pnpm format:check` 0 errors / `ruff check .` exit 0>                     |
+| G3 Unit               | PASS       | <`pnpm test -- --run` N tests / `pytest -q` N tests passed>                             |
 | G4 Security (PHI/inf) | PASS / N/A | <embed `security-check` Findings below, or "N/A — Block is not PHI/inference touching"> |
 | G5 Cost (latency)     | PASS / N/A | <embed `cost-check` Findings below, or "N/A — Block has no inference impact">           |
 | G6 Spec align         | PENDING    | <left for Evaluator after merge — typically blank at PR-open time>                      |

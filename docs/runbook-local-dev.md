@@ -6,19 +6,25 @@ Single-machine setup for the AI Medical Record Generator. Everything runs in Doc
 
 ```
 docker-compose.yml
-├── frontend      Next.js dev server              :3000
-├── backend       FastAPI (uvicorn)               :8000
-├── postgres      PostgreSQL                       :5432  (internal-only)
-├── llm           Gemma 4 E4B (Ollama)            :11434 (internal-only)
-└── asr           whisper.cpp medium-q5_0 server   :8080  (internal-only)
+├── frontend         Next.js dev server                  :3000
+├── backend          FastAPI (uvicorn + OTel auto-inst)  :8000
+├── postgres         PostgreSQL                          :5432  (internal-only)
+├── llm              Gemma 4 E4B (Ollama)                :11434 (internal-only)
+├── asr              whisper.cpp medium-q5_0 server      :8080  (internal-only)
+├── otel-collector   OTel Collector contrib (datadog exp):4318  (internal-only) — ADR-0006
+└── datadog-agent    DD Agent 7.66.1 (metrics/logs)     4317/4318/8125/8126 (host-exposed)
 ```
 
-All services share a single private bridge network. Only `frontend` and `backend` expose ports to the host; `postgres`, `llm`, and `asr` are reachable only inside the network.
+All services share a single private bridge network. `frontend` (3000) and `backend` (8000) expose ports to the host; `datadog-agent` exposes 4317/4318/8125/8126 to the host for direct dev probes. `postgres`, `llm`, `asr`, `otel-collector` are reachable only inside the network.
+
+Traces flow: app OTel SDK → `otel-collector:4318` → Datadog SaaS (datadog exporter). DD Agent's own OTLP receiver is NOT in the trace path because the 7.66.1 OTLP→APM bridge is broken on this stack — see ADR-0006 §Decision and `docker/otel-collector/config.yaml`.
 
 ## Prerequisites
 
 - Docker Desktop or Docker Engine 25+
 - `docker compose` v2 (built into Docker Desktop)
+- `.env` at repo root with at least: `DD_API_KEY`, `DD_SITE`. Add `DD_APP_KEY` if you intend to run `terraform/datadog/` (Datadog management API needs the App Key — separate from API Key, issued at Datadog UI → Organization Settings → Application Keys).
+- For RUM (browser) verification: a Datadog RUM Application is required. Create one via `terraform/datadog/` (recommended) or manually in Datadog UI → UX Monitoring → RUM Applications. Populate `NEXT_PUBLIC_DD_RUM_APPLICATION_ID` / `NEXT_PUBLIC_DD_RUM_CLIENT_TOKEN` in `.env`.
 - Disk: 15 GB free (model weights + Postgres data volume)
 - **System RAM: 24 GB recommended.** The publisher-supplied `gemma4:e4b` Ollama tag loads ≈10 GiB at runtime (≈9.4 GiB weights + KV cache + compute graph), and the `llm` container needs that plus headroom alongside backend / postgres / frontend / Docker overhead. See `SPEC.md#hardware-assumptions`.
 - **Docker Desktop memory allocation: ≥ 13 GB.** On macOS / Windows, open Docker Desktop → Settings → Resources → Memory and confirm the slider is ≥ 13 GB. This covers `gemma4:e4b` (~10 GiB) + `whisper.cpp medium-q5_0` (~1 GiB) + backend/postgres/frontend/Docker overhead (~2 GiB). Below 13 GB the `llm` container may fail to load with `model requires more system memory than is available` (see INF-003 history). 16 GB is recommended for comfortable headroom and for the kotoba-whisper variant swap described in ADR-0001.
@@ -47,11 +53,11 @@ docker compose exec llm ollama pull gemma4:e4b
 #    slow while the model downloads. The asr healthcheck has a 120 s start_period to
 #    accommodate this. Subsequent starts skip the download (model is in asr_data volume).
 
-# 6. Confirm health (expect 5 services running).
+# 6. Confirm health (expect 7 services running).
 docker compose ps --status running
 ```
 
-Expected: 5 services in `running` or `running (healthy)` state. If any service is `restarting`, jump to **Troubleshooting**.
+Expected: 7 services in `running` or `running (healthy)` state (frontend, backend, postgres, llm, asr, otel-collector, datadog-agent). If any service is `restarting`, jump to **Troubleshooting**.
 
 > **Port mapping summary** (useful when reading `docker compose ps` output):
 >
@@ -91,9 +97,16 @@ docker compose exec backend curl -fsS http://llm:11434/api/generate \
 # ASR readiness check (TCP port only — no audio, no PHI)
 docker compose exec backend python3 -c \
   "import socket; s=socket.socket(); s.settimeout(4); s.connect(('asr',8080)); s.close(); print('asr:8080 reachable')"
+
+# OTel Collector readiness (trace path entry point — ADR-0006)
+docker compose exec backend python3 -c \
+  "import socket; s=socket.socket(); s.settimeout(4); s.connect(('otel-collector',4318)); s.close(); print('otel-collector:4318 reachable')"
+
+# DD Agent (Datadog APM intake direct from host, for dev probes)
+curl -fsS http://localhost:4318/v1/traces -X POST -d '' -o /dev/null -w "dd-agent OTLP: HTTP %{http_code}\n"  # 200 expected
 ```
 
-All five MUST return success before declaring G0 (compose-up) green.
+All MUST return success before declaring G0 (compose-up) green.
 
 ## Daily commands
 

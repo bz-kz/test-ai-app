@@ -14,4 +14,7 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# ADR-0006: OTel auto-instrumentation を起動ラッパ経由で有効化。
+# `opentelemetry-instrument` は OTEL_* env vars (compose lines 152-169) を読んで
+# FastAPI/httpx/sqlalchemy/asyncpg/logging の各 instrumentation を起動時に注入する。
+CMD ["opentelemetry-instrument", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
