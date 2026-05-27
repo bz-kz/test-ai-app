@@ -19,8 +19,8 @@ resource "datadog_service_level_objective" "backend_availability" {
   description = "Backend HTTP の success rate (5xx 以外) を 7d rolling で計測。既存 backend_5xx_rate monitor の SLI 版。"
 
   query {
-    numerator   = "sum:trace.backend.request.hits{service:backend,env:${var.env}}.as_count() - sum:trace.backend.request.errors{service:backend,env:${var.env}}.as_count()"
-    denominator = "sum:trace.backend.request.hits{service:backend,env:${var.env}}.as_count()"
+    numerator   = "sum:trace.opentelemetry.instrumentation.fastapi.server.hits{service:backend,env:local}.as_count() - sum:trace.opentelemetry.instrumentation.fastapi.server.errors{service:backend,env:local}.as_count()"
+    denominator = "sum:trace.opentelemetry.instrumentation.fastapi.server.hits{service:backend,env:local}.as_count()"
   }
 
   thresholds {
@@ -119,18 +119,31 @@ resource "datadog_monitor" "slo_alert_llm_latency" {
 # ----------------------------------------------------------------------------
 # SLO: Frontend LCP < 2500ms (Google Core Web Vital "Good")
 # ----------------------------------------------------------------------------
-# numerator/denominator の metric (rum.lcp.good / rum.lcp.total) は本 Block
-# 時点では Datadog 側に存在しない custom metric。RUM Analytics の
-# Generate Metric を別 Block (deferred D2) で作るまで SLO は "No data"。
-# IaC としては apply 可能 (Datadog はエラーにせず No data 扱い)。
+# RUM 自動生成メトリクス (rum.measure.view.largest_contentful_paint) を直接
+# 参照する Time Slice SLO。カスタムメトリクスの生成は不要。
+# p75 LCP が 2500ms 未満の time slice を "uptime" として計測する。
 resource "datadog_service_level_objective" "frontend_lcp" {
   name        = "[${var.app_name}] frontend LCP < 2500ms 7d"
-  type        = "metric"
-  description = "Frontend RUM view event のうち LCP < 2500ms の割合。Google Core Web Vital「Good」(p75 < 2500ms) に準拠。custom metric の生成は deferred (D2)。"
+  type        = "time_slice"
+  description = "Frontend RUM view の p75 LCP が 2500ms 未満であるかを Time Slice で計測。Google Core Web Vital「Good」(p75 < 2500ms) に準拠。"
 
-  query {
-    numerator   = "sum:rum.lcp.good{service:frontend-browser,env:${var.env}}.as_count()"
-    denominator = "sum:rum.lcp.total{service:frontend-browser,env:${var.env}}.as_count()"
+  sli_specification {
+    time_slice {
+      query {
+        formula {
+          formula_expression = "query1"
+        }
+        query {
+          metric_query {
+            name        = "query1"
+            query       = "p75:rum.measure.view.largest_contentful_paint{service:frontend-browser,env:${var.env}}"
+            data_source = "metrics"
+          }
+        }
+      }
+      comparator = "<"
+      threshold  = 2500000000 # 2500ms = 2,500,000,000 ns（メトリクス単位: nanosecond）
+    }
   }
 
   thresholds {
@@ -144,11 +157,13 @@ resource "datadog_service_level_objective" "frontend_lcp" {
 # ----------------------------------------------------------------------------
 # Alert: frontend_lcp SLO breach
 # ----------------------------------------------------------------------------
+# Time Slice SLO は error_budget / burn_rate アラートの両方に対応。
+# モニター定義は変更不要（SLO ID を参照しているため自動追従）。
 resource "datadog_monitor" "slo_alert_frontend_lcp" {
   name    = "[${var.app_name}] SLO breach — frontend LCP"
   type    = "slo alert"
   message = <<-EOT
-    Frontend LCP SLO (7d, target 75% of view events < 2500ms) が割れました。
+    Frontend LCP SLO (7d, target 75% of time slices with p75 LCP < 2500ms) が割れました。
     確認: RUM Performance dashboard、最近の frontend deploy、画像/フォント遅延、サードパーティ script。
     ${local.recipient_block}
     ${local.jira_block}
