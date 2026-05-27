@@ -3,10 +3,21 @@
 # 3 SLO + 3 SLO alert monitor:
 # - backend_availability (metric-based)         + slo_alert_backend_availability
 # - llm_latency          (time-slice)           + slo_alert_llm_latency
-# - frontend_lcp         (metric-based, RUM)    + slo_alert_frontend_lcp
+# - frontend_lcp         (time-slice, RUM)      + slo_alert_frontend_lcp
 #
 # 通知は monitors.tf の local.recipient_block + local.jira_block を流用。
 # SLO threshold には warning 行を付けない (1-tier breach 方針、設計 §5)。
+#
+# -- ライフサイクル方針 (全 3 SLO + monitor ペアに統一適用) -------------------
+# Datadog API には 2 つの制約があり、SLO の type 変更等で destroy + create が
+# 必要になった際にナイーブな apply 順では失敗する:
+#   (1) SLO が monitor から参照されている間は destroy できない (409 Conflict)
+#   (2) "slo alert" 型 monitor の SLO ID は immutable (update 不可、400)
+# 制約 (1)+(2) を同時に満たす apply 順は:
+#   新 SLO 作成 → 新 monitor 作成 (新 SLO ID 参照) → 旧 monitor destroy → 旧 SLO destroy
+# これを terraform 上で実現するため、3 SLO すべてに create_before_destroy、
+# 3 monitor すべてに create_before_destroy + replace_triggered_by を付与。
+# 詳細は PR #21 / #22 / 本 PR の commit message と PR description 参照。
 
 # ----------------------------------------------------------------------------
 # SLO: Backend availability (5xx 以外の success rate ≥ 99% / 7d)
@@ -29,6 +40,10 @@ resource "datadog_service_level_objective" "backend_availability" {
   }
 
   tags = concat(local.common_tags, ["service:backend", "category:slo", "sli:backend_availability"])
+
+  lifecycle {
+    create_before_destroy = true # ファイル冒頭「ライフサイクル方針」参照
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -53,6 +68,11 @@ resource "datadog_monitor" "slo_alert_backend_availability" {
   notify_no_data = false
 
   tags = concat(local.common_tags, ["service:backend", "category:slo-alert", "sli:backend_availability"])
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [datadog_service_level_objective.backend_availability]
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -90,6 +110,10 @@ resource "datadog_service_level_objective" "llm_latency" {
   }
 
   tags = concat(local.common_tags, ["service:backend", "category:slo", "sli:llm_latency", "subsystem:llm"])
+
+  lifecycle {
+    create_before_destroy = true # ファイル冒頭「ライフサイクル方針」参照
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -114,6 +138,11 @@ resource "datadog_monitor" "slo_alert_llm_latency" {
   notify_no_data = false
 
   tags = concat(local.common_tags, ["service:backend", "category:slo-alert", "sli:llm_latency", "subsystem:llm"])
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [datadog_service_level_objective.llm_latency]
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -152,6 +181,10 @@ resource "datadog_service_level_objective" "frontend_lcp" {
   }
 
   tags = concat(local.common_tags, ["category:slo", "sli:frontend_lcp", "service:frontend-browser"])
+
+  lifecycle {
+    create_before_destroy = true # ファイル冒頭「ライフサイクル方針」参照
+  }
 }
 
 # ----------------------------------------------------------------------------
@@ -178,4 +211,9 @@ resource "datadog_monitor" "slo_alert_frontend_lcp" {
   notify_no_data = false
 
   tags = concat(local.common_tags, ["category:slo-alert", "sli:frontend_lcp", "service:frontend-browser"])
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [datadog_service_level_objective.frontend_lcp]
+  }
 }
