@@ -74,6 +74,23 @@ grep -RE 'http://asr[: ]|whisper' backend/app | grep -v '^backend/app/infrastruc
 
 # Frontend mic capture stays in dedicated voice components.
 grep -RE 'getUserMedia|MediaRecorder' frontend/src | grep -vE '(VoiceCapture|RecordButton|useVoiceCapture)' && exit 1 || true
+
+# ADR-0006 — backend ddtrace 撤去 (BE-018)
+grep -RnE '^import ddtrace' backend/app backend/main.py && exit 1 || true
+
+# ADR-0006 — frontend に Node 用 dd-trace を入れない
+grep -RE 'dd-trace' frontend/src && exit 1 || true
+
+# ADR-0006 — frontend src には OTel browser SDK を入れない (instrumentation.ts は Node 用 @vercel/otel のみ)
+grep -RE '@opentelemetry' frontend/src && exit 1 || true
+
+# ADR-0006 FE-015 — Datadog Browser RUM SDK の isolation
+grep -RE '@datadog/browser-' frontend/src | grep -vE '(lib/datadog-rum|components/_rum)' && exit 1 || true
+
+# ADR-0006 FE-015 — RUM init defaults を hardcode 検証
+grep -c 'defaultPrivacyLevel: "mask"' frontend/src/lib/datadog-rum.ts | grep -E '^1$' || exit 1
+grep -c 'trackLongTasks: false' frontend/src/lib/datadog-rum.ts | grep -E '^1$' || exit 1
+grep -c "id: \"anon\"" frontend/src/lib/datadog-rum.ts | grep -E '^1$' || exit 1
 ```
 
 A non-clean result on any of the first two is CRITICAL.

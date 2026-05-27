@@ -171,7 +171,7 @@ resource "datadog_service_level_objective" "frontend_lcp" {
         }
       }
       comparator = "<"
-      threshold  = 2500000000 # 2500ms = 2,500,000,000 ns（メトリクス単位: nanosecond）
+      threshold  = 2500000000  # 2500ms = 2,500,000,000 ns（メトリクス単位: nanosecond）
     }
   }
 
@@ -191,6 +191,7 @@ resource "datadog_service_level_objective" "frontend_lcp" {
 # Alert: frontend_lcp SLO breach
 # ----------------------------------------------------------------------------
 # Time Slice SLO は error_budget / burn_rate アラートの両方に対応。
+# モニター定義は変更不要（SLO ID を参照しているため自動追従）。
 resource "datadog_monitor" "slo_alert_frontend_lcp" {
   name    = "[${var.app_name}] SLO breach — frontend LCP"
   type    = "slo alert"

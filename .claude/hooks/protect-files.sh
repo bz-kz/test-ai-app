@@ -4,7 +4,7 @@
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
-PROTECTED_PATTERNS=(".env" "package-lock.json" ".git/")
+PROTECTED_PATTERNS=(".env" "package-lock.json" "pnpm-lock.yaml" ".git/")
 
 for pattern in "${PROTECTED_PATTERNS[@]}"; do
   if [[ "$FILE_PATH" == *"$pattern"* ]]; then
